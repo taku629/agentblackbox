@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% set active_page = "sessions" %}
+{% block title %}Sessions · AgentBlackBox{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Sessions</h1>
+  <p>All recorded agent sessions · auto-refreshes every 30s</p>
+</div>
+
+<!-- Summary cards -->
+<div class="stats-grid">
+  <div class="card">
+    <div class="card-title">Total Sessions</div>
+    <div class="card-value">{{ stats.total_sessions or 0 }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Total Cost</div>
+    <div class="card-value" style="font-size:20px;">${{ "%.4f"|format(stats.total_cost or 0) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Success Rate</div>
+    <div class="card-value">{{ "%.0f"|format((stats.success_rate or 0) * 100) }}<span style="font-size:16px;font-weight:500;color:var(--text-muted)">%</span></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Avg Duration</div>
+    {% set ms = stats.avg_duration_ms or 0 %}
+    {% if ms < 1000 %}
+      <div class="card-value">{{ "%.0f"|format(ms) }}<span style="font-size:16px;font-weight:500;color:var(--text-muted)">ms</span></div>
+    {% else %}
+      <div class="card-value">{{ "%.1f"|format(ms/1000) }}<span style="font-size:16px;font-weight:500;color:var(--text-muted)">s</span></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Filters -->
+<form id="filter-form" class="filter-bar"
+  hx-get="/api/sessions"
+  hx-target="#sessions-tbody"
+  hx-trigger="input changed delay:350ms, change"
+  hx-indicator="#loading">
+  <div class="filter-group">
+    <label>Agent</label>
+    <select name="agent_name">
+      <option value="">All agents</option>
+      {% for a in agents %}
+        <option value="{{ a }}" {% if filters.agent_name == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Status</label>
+    <select name="status">
+      <option value="">All</option>
+      <option value="success" {% if filters.status == "success" %}selected{% endif %}>Success</option>
+      <option value="error"   {% if filters.status == "error"   %}selected{% endif %}>Error</option>
+      <option value="running" {% if filters.status == "running" %}selected{% endif %}>Running</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>From</label>
+    <input type="date" name="date_from" value="{{ filters.date_from }}">
+  </div>
+  <div class="filter-group">
+    <label>To</label>
+    <input type="date" name="date_to" value="{{ filters.date_to }}">
+  </div>
+  <span id="loading" class="htmx-indicator" style="margin-left:4px;align-self:flex-end;padding-bottom:8px">
+    <span class="spinner"></span>
+  </span>
+</form>
+
+<!-- Sessions table -->
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Session ID</th>
+        <th>Agent</th>
+        <th>Started</th>
+        <th>Duration</th>
+        <th style="text-align:center">LLM calls</th>
+        <th style="text-align:center">Tool calls</th>
+        <th style="text-align:right">Cost</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="sessions-tbody"
+      hx-get="/api/sessions"
+      hx-trigger="every 30s"
+      hx-include="#filter-form">
+      {% include "partials/sessions_rows.html" %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

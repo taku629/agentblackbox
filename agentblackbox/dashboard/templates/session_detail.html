@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% set active_page = "sessions" %}
+{% block title %}{{ session.agent_name }} · AgentBlackBox{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <a href="/" style="color:var(--text-muted);font-size:13px;display:flex;align-items:center;gap:4px">
+      ← Sessions
+    </a>
+    <span style="color:var(--border)">|</span>
+    <h1 style="margin:0">{{ session.agent_name }}</h1>
+    {% if session.status == "success" %}
+      <span class="badge badge-success">success</span>
+    {% elif session.status == "error" %}
+      <span class="badge badge-error">error</span>
+    {% else %}
+      <span class="badge badge-running">running</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Session info card -->
+<div class="card" style="margin-bottom:20px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">
+    <div>
+      <div class="card-title">Session ID</div>
+      <div class="cell-mono" style="font-size:12px;word-break:break-all">{{ session.session_id }}</div>
+    </div>
+    <div>
+      <div class="card-title">Started</div>
+      <div>{{ session.start_dt }}</div>
+    </div>
+    <div>
+      <div class="card-title">Duration</div>
+      <div>{{ session.duration_str }}</div>
+    </div>
+    <div>
+      <div class="card-title">Total Cost</div>
+      <div style="font-weight:600;font-family:monospace">${{ "%.6f"|format(session.total_cost_usd) }}</div>
+    </div>
+    <div>
+      <div class="card-title">Events</div>
+      <div>{{ events|length }} total</div>
+    </div>
+    <div style="display:flex;align-items:flex-end">
+      <a href="/sessions/{{ session.session_id }}/export" class="btn btn-outline btn-sm">
+        <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+        Export JSON
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Main layout: timeline + sidebar -->
+<div class="detail-layout">
+
+  <!-- Timeline -->
+  <div>
+    <div class="section-header">
+      <h2 style="margin:0">Timeline</h2>
+      <span style="font-size:12px;color:var(--text-muted)">Click any event to expand</span>
+    </div>
+
+    {% if events %}
+    <div class="timeline">
+      {% for ev in events %}
+
+      {# ── LLM call ─────────────────────────────────────────────── #}
+      {% if ev._type == "llm" %}
+      <div class="tl-item tl-llm">
+        <div class="tl-dot"></div>
+        <details class="tl-card">
+          <summary>
+            <span class="tl-time">{{ ev._dt }}</span>
+            <span style="font-size:16px">🤖</span>
+            <span style="font-weight:600">{{ ev.model }}</span>
+            <span class="tag-pill">{{ ev.input_tokens }}→{{ ev.output_tokens }} tok</span>
+            <span class="tag-pill" style="color:var(--success)">${{ "%.6f"|format(ev.cost_usd) }}</span>
+            <span class="tag-pill">{{ "%.0f"|format(ev.duration_ms) }}ms</span>
+            <span class="tl-arrow">▶</span>
+          </summary>
+          <div class="tl-expand">
+            <div class="tl-section">
+              <div class="tl-section-title">Input ({{ ev.input_tokens }} tokens)</div>
+              <pre><code class="language-plaintext">{{ ev.input_text }}</code></pre>
+            </div>
+            <div class="tl-section">
+              <div class="tl-section-title">Output ({{ ev.output_tokens }} tokens)</div>
+              <pre><code class="language-plaintext">{{ ev.output_text }}</code></pre>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      {# ── Tool call ─────────────────────────────────────────────── #}
+      {% elif ev._type == "tool" %}
+      <div class="tl-item tl-tool">
+        <div class="tl-dot"></div>
+        <details class="tl-card">
+          <summary>
+            <span class="tl-time">{{ ev._dt }}</span>
+            <span style="font-size:16px">🔧</span>
+            <span style="font-weight:600">{{ ev.tool_name }}</span>
+            {% if ev.error %}
+              <span class="badge badge-error" style="font-size:11px">error</span>
+            {% else %}
+              <span style="color:var(--success);font-size:13px">✓</span>
+            {% endif %}
+            <span class="tag-pill">{{ "%.0f"|format(ev.duration_ms) }}ms</span>
+            <span class="tl-arrow">▶</span>
+          </summary>
+          <div class="tl-expand">
+            <div class="tl-section">
+              <div class="tl-section-title">Arguments</div>
+              <pre><code class="language-json">{{ ev.arguments | pretty_json }}</code></pre>
+            </div>
+            {% if ev.error %}
+            <div class="tl-section">
+              <div class="tl-section-title" style="color:var(--error)">Error</div>
+              <pre><code class="language-plaintext">{{ ev.error }}</code></pre>
+            </div>
+            {% else %}
+            <div class="tl-section">
+              <div class="tl-section-title">Result</div>
+              <pre><code class="language-json">{{ ev.result | pretty_json }}</code></pre>
+            </div>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+
+      {# ── Error ─────────────────────────────────────────────────── #}
+      {% elif ev._type == "error" %}
+      <div class="tl-item tl-error">
+        <div class="tl-dot"></div>
+        <details class="tl-card" style="border-color:rgba(239,68,68,0.3)">
+          <summary>
+            <span class="tl-time">{{ ev._dt }}</span>
+            <span style="font-size:16px">❌</span>
+            <span style="font-weight:600;color:var(--error)">{{ ev.error_type }}</span>
+            <span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">{{ ev.message }}</span>
+            <span class="tl-arrow">▶</span>
+          </summary>
+          <div class="tl-expand">
+            <div class="tl-section">
+              <div class="tl-section-title" style="color:var(--error)">Stack Trace</div>
+              <pre style="border-color:rgba(239,68,68,0.2)"><code class="language-plaintext">{{ ev.traceback }}</code></pre>
+            </div>
+          </div>
+        </details>
+      </div>
+      {% endif %}
+
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p>No events recorded in this session.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right sidebar: stats -->
+  <div class="sidebar-stats">
+    {% if model_costs %}
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin-bottom:12px">Cost by Model</h3>
+      {% for model, cost in model_costs.items() %}
+      <div class="stat-row">
+        <span class="stat-label" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="{{ model }}">{{ model }}</span>
+        <span class="stat-value" style="color:var(--success)">${{ "%.6f"|format(cost) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if tool_counts %}
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin-bottom:12px">Tool Usage</h3>
+      {% for tool, count in tool_counts.items() %}
+      <div class="stat-row">
+        <span class="stat-label" style="font-size:12px">{{ tool }}</span>
+        <span class="stat-value">{{ count }}×</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h3 style="margin-bottom:12px">Session Stats</h3>
+      <div class="stat-row">
+        <span class="stat-label">LLM calls</span>
+        <span class="stat-value">{{ events | selectattr("_type","eq","llm") | list | length }}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Tool calls</span>
+        <span class="stat-value">{{ events | selectattr("_type","eq","tool") | list | length }}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Errors</span>
+        <span class="stat-value" style="{% if events | selectattr('_type','eq','error') | list | length > 0 %}color:var(--error){% endif %}">
+          {{ events | selectattr("_type","eq","error") | list | length }}
+        </span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total cost</span>
+        <span class="stat-value" style="color:var(--success)">${{ "%.6f"|format(session.total_cost_usd) }}</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

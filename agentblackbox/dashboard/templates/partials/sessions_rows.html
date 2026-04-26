@@ -1,0 +1,49 @@
+{% if sessions %}
+  {% for s in sessions %}
+  <tr onclick="location.href='/sessions/{{ s.session_id }}'" style="cursor:pointer">
+    <td class="cell-mono" title="{{ s.session_id }}">
+      {{ s.session_id_short }}<span style="color:var(--text-muted)">…</span>
+    </td>
+    <td style="font-weight:500">{{ s.agent_name }}</td>
+    <td class="cell-muted">{{ s.start_dt }}</td>
+    <td class="cell-muted">{{ s.duration_str }}</td>
+    <td style="text-align:center">
+      {% if s.llm_count > 0 %}
+        <span class="tag-pill">{{ s.llm_count }}</span>
+      {% else %}
+        <span style="color:var(--text-muted)">—</span>
+      {% endif %}
+    </td>
+    <td style="text-align:center">
+      {% if s.tool_count > 0 %}
+        <span class="tag-pill">{{ s.tool_count }}</span>
+      {% else %}
+        <span style="color:var(--text-muted)">—</span>
+      {% endif %}
+    </td>
+    <td style="text-align:right;font-family:monospace;font-size:12.5px">
+      ${{ "%.6f"|format(s.total_cost_usd) }}
+    </td>
+    <td>
+      {% if s.status == "success" %}
+        <span class="badge badge-success">success</span>
+      {% elif s.status == "error" %}
+        <span class="badge badge-error">error</span>
+      {% else %}
+        <span class="badge badge-running">running</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+{% else %}
+  <tr>
+    <td colspan="8">
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto;display:block;opacity:0.3">
+          <path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/>
+        </svg>
+        <p>No sessions found. Run <code>python examples/basic_usage.py</code> to get started.</p>
+      </div>
+    </td>
+  </tr>
+{% endif %}

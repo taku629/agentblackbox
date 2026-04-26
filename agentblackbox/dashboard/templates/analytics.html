@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% set active_page = "analytics" %}
+{% block title %}Analytics · AgentBlackBox{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Cost Analytics</h1>
+  <p>Spending trends across agents and models</p>
+</div>
+
+<!-- Period selector -->
+<div class="period-btns">
+  <button class="period-btn {% if period=='24h' %}active{% endif %}" onclick="changePeriod('24h')">24h</button>
+  <button class="period-btn {% if period=='7d'  %}active{% endif %}" onclick="changePeriod('7d')">7 days</button>
+  <button class="period-btn {% if period=='30d' %}active{% endif %}" onclick="changePeriod('30d')">30 days</button>
+</div>
+
+<!-- Charts row -->
+<div class="charts-grid">
+
+  <!-- Chart 1: Daily cost line -->
+  <div class="card" style="grid-column: span 2">
+    <h2>Daily Cost Trend</h2>
+    <div class="chart-wrap">
+      {% if analytics.daily %}
+        <canvas id="chartDaily"></canvas>
+      {% else %}
+        <div class="empty-state"><p>No data for selected period</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Chart 2: Agent bar -->
+  <div class="card">
+    <h2>Cost by Agent</h2>
+    <div class="chart-wrap">
+      {% if analytics.agent_costs %}
+        <canvas id="chartAgents"></canvas>
+      {% else %}
+        <div class="empty-state"><p>No data for selected period</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Chart 3: Model doughnut -->
+  <div class="card">
+    <h2>Cost by Model</h2>
+    <div class="chart-wrap">
+      {% if analytics.model_costs %}
+        <canvas id="chartModels"></canvas>
+      {% else %}
+        <div class="empty-state"><p>No data for selected period</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Agent stats table -->
+{% if analytics.agent_costs %}
+<div class="card" style="margin-top:8px">
+  <h2>Agent Details</h2>
+  <div class="table-wrap" style="border:none;margin-top:8px">
+    <table>
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th style="text-align:right">Sessions</th>
+          <th style="text-align:right">Total Cost</th>
+          <th style="text-align:right">Success Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in analytics.agent_costs %}
+        <tr>
+          <td style="font-weight:500">{{ a.agent_name }}</td>
+          <td style="text-align:right;color:var(--text-muted)">{{ a.sessions }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:12.5px">${{ "%.6f"|format(a.cost) }}</td>
+          <td style="text-align:right">
+            <span style="color:{% if a.success_rate >= 80 %}var(--success){% elif a.success_rate >= 50 %}var(--warning){% else %}var(--error){% endif %}">
+              {{ "%.0f"|format(a.success_rate) }}%
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Model stats table -->
+{% if analytics.model_costs %}
+<div class="card" style="margin-top:16px">
+  <h2>Model Details</h2>
+  <div class="table-wrap" style="border:none;margin-top:8px">
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th style="text-align:right">Calls</th>
+          <th style="text-align:right">Total Tokens</th>
+          <th style="text-align:right">Total Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in analytics.model_costs %}
+        <tr>
+          <td class="cell-mono" style="font-size:12.5px">{{ m.model }}</td>
+          <td style="text-align:right;color:var(--text-muted)">{{ m.calls }}</td>
+          <td style="text-align:right;color:var(--text-muted)">{{ "{:,}".format(m.total_tokens or 0) }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:12.5px">${{ "%.6f"|format(m.cost) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _DATA = {{ analytics_json | safe }};
+const _ACCENT_COLORS = [
+  '#6366f1','#06b6d4','#22c55e','#f59e0b','#ef4444',
+  '#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16'
+];
+
+function changePeriod(p) {
+  window.location.href = '/analytics?period=' + p;
+}
+
+// ── Chart 1: Daily cost (line) ───────────────────────────────────────────────
+const ctxDaily = document.getElementById('chartDaily');
+if (ctxDaily && _DATA.daily.length > 0) {
+  new Chart(ctxDaily, {
+    type: 'line',
+    data: {
+      labels: _DATA.daily.map(d => d.day),
+      datasets: [{
+        label: 'Cost ($)',
+        data: _DATA.daily.map(d => d.cost),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 4,
+        pointBackgroundColor: '#6366f1',
+        pointHoverRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { color: '#2d3148' }, ticks: { maxRotation: 0 } },
+        y: {
+          grid: { color: '#2d3148' },
+          ticks: {
+            callback: v => '$' + v.toFixed(4)
+          },
+          beginAtZero: true
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ' $' + ctx.parsed.y.toFixed(6),
+            afterLabel: ctx => {
+              const d = _DATA.daily[ctx.dataIndex];
+              return ` ${d.sessions} session(s)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ── Chart 2: Agent cost (bar) ────────────────────────────────────────────────
+const ctxAgents = document.getElementById('chartAgents');
+if (ctxAgents && _DATA.agent_costs.length > 0) {
+  new Chart(ctxAgents, {
+    type: 'bar',
+    data: {
+      labels: _DATA.agent_costs.map(d => d.agent_name),
+      datasets: [{
+        label: 'Cost ($)',
+        data: _DATA.agent_costs.map(d => d.cost),
+        backgroundColor: _DATA.agent_costs.map((_, i) => _ACCENT_COLORS[i % _ACCENT_COLORS.length]),
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 30 } },
+        y: {
+          grid: { color: '#2d3148' },
+          ticks: { callback: v => '$' + v.toFixed(4) },
+          beginAtZero: true
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(6) } }
+      }
+    }
+  });
+}
+
+// ── Chart 3: Model cost (doughnut) ──────────────────────────────────────────
+const ctxModels = document.getElementById('chartModels');
+if (ctxModels && _DATA.model_costs.length > 0) {
+  new Chart(ctxModels, {
+    type: 'doughnut',
+    data: {
+      labels: _DATA.model_costs.map(d => d.model),
+      datasets: [{
+        data: _DATA.model_costs.map(d => d.cost),
+        backgroundColor: _DATA.model_costs.map((_, i) => _ACCENT_COLORS[i % _ACCENT_COLORS.length]),
+        borderColor: '#1a1d27',
+        borderWidth: 2,
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { boxWidth: 10, padding: 12, font: { size: 11 } }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : 0;
+              return ` $${ctx.parsed.toFixed(6)} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}
