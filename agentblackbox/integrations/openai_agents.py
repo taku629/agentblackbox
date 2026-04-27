@@ -88,7 +88,7 @@ def _patch_model_calls(agents_module: Any) -> None:
                 output_text=output_text,
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
-                duration_ms=duration_ms,
+                latency_ms=duration_ms,
             )
         return response
 

@@ -79,7 +79,7 @@
             <span style="font-weight:600">{{ ev.model }}</span>
             <span class="tag-pill">{{ ev.input_tokens }}→{{ ev.output_tokens }} tok</span>
             <span class="tag-pill" style="color:var(--success)">${{ "%.6f"|format(ev.cost_usd) }}</span>
-            <span class="tag-pill">{{ "%.0f"|format(ev.duration_ms) }}ms</span>
+            <span class="tag-pill">{{ "%.0f"|format(ev.latency_ms) }}ms</span>
             <span class="tl-arrow">▶</span>
           </summary>
           <div class="tl-expand">
@@ -109,13 +109,13 @@
             {% else %}
               <span style="color:var(--success);font-size:13px">✓</span>
             {% endif %}
-            <span class="tag-pill">{{ "%.0f"|format(ev.duration_ms) }}ms</span>
+            <span class="tag-pill">{{ "%.0f"|format(ev.latency_ms) }}ms</span>
             <span class="tl-arrow">▶</span>
           </summary>
           <div class="tl-expand">
             <div class="tl-section">
               <div class="tl-section-title">Arguments</div>
-              <pre><code class="language-json">{{ ev.arguments | pretty_json }}</code></pre>
+              <pre><code class="language-json">{{ ev.args | pretty_json }}</code></pre>
             </div>
             {% if ev.error %}
             <div class="tl-section">
