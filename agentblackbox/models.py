@@ -4,50 +4,49 @@ from typing import Any, Optional
 
 
 @dataclass
-class Session:
-    session_id: str
-    agent_name: str
-    start_time: int  # nanoseconds
-    end_time: Optional[int] = None
-    status: str = "running"
-    total_cost_usd: float = 0.0
-    metadata: dict = field(default_factory=dict)
-
-
-@dataclass
 class LLMCall:
-    id: str
+    call_id: str
     session_id: str
-    timestamp: int  # nanoseconds
+    timestamp: float
     model: str
-    input_tokens: int
-    output_tokens: int
     input_text: str
     output_text: str
-    duration_ms: float
+    input_tokens: int
+    output_tokens: int
     cost_usd: float
-    metadata: dict = field(default_factory=dict)
+    latency_ms: float
 
 
 @dataclass
 class ToolCall:
-    id: str
+    call_id: str
     session_id: str
-    timestamp: int  # nanoseconds
+    timestamp: float
     tool_name: str
-    arguments: dict
+    args: dict
     result: Any
-    duration_ms: float
-    error: Optional[str] = None
-    metadata: dict = field(default_factory=dict)
+    latency_ms: float
 
 
 @dataclass
 class ErrorRecord:
-    id: str
+    error_id: str
     session_id: str
-    timestamp: int  # nanoseconds
+    timestamp: float
     error_type: str
     message: str
     traceback: str
+
+
+@dataclass
+class Session:
+    session_id: str
+    agent_name: str
+    start_time: float
+    end_time: Optional[float] = None
+    status: str = "running"
+    llm_calls: list = field(default_factory=list)
+    tool_calls: list = field(default_factory=list)
+    errors: list = field(default_factory=list)
+    total_cost_usd: float = 0.0
     metadata: dict = field(default_factory=dict)

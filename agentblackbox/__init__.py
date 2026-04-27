@@ -2,15 +2,17 @@
 from .recorder import BlackBox
 from .storage import SQLiteStorage, DEFAULT_DB_PATH
 from .cost import calculate_cost, list_supported_models
+from .masking import PIIMasker
 from .models import Session, LLMCall, ToolCall, ErrorRecord
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "BlackBox",
     "SQLiteStorage",
     "DEFAULT_DB_PATH",
     "calculate_cost",
     "list_supported_models",
+    "PIIMasker",
     "Session",
     "LLMCall",
     "ToolCall",

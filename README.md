@@ -1,13 +1,12 @@
 # 🔲 AgentBlackBox
 
-**A flight recorder for AI agents.**  
+**A flight recorder for AI agents.**
 Record every decision, tool call, and failure. Replay them later.
 
 ![PyPI](https://img.shields.io/pypi/v/agentblackbox)
 ![Python](https://img.shields.io/pypi/pyversions/agentblackbox)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-39%20passed-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-73%25-green)
+![Tests](https://img.shields.io/badge/tests-97%20passed-brightgreen)
 
 ---
 
@@ -15,7 +14,7 @@ Record every decision, tool call, and failure. Replay them later.
 
 **72% of AI agent projects never reach production.**
 
-Not because the agents are wrong — but because they're invisible.  
+Not because the agents are wrong — but because they're invisible.
 You can't debug what you can't see. You can't trust what you can't audit.
 
 AgentBlackBox is the flight recorder your AI agents need.
@@ -38,20 +37,22 @@ Requires Python 3.10+.
 ```python
 from agentblackbox import BlackBox
 
-# Drop-in decorator — existing code unchanged
 @BlackBox.record(agent_name="researcher")
 def run_agent(task: str):
-    # your existing agent code here
-    ...
+    bb = BlackBox.current()
+    bb.record_llm_call(
+        model="gpt-4o",
+        input_text=task,
+        output_text="Here are the findings...",
+        input_tokens=150,
+        output_tokens=320,
+    )
 
-run_agent("Summarize today's AI news")
+run_agent("Summarize AI news")
 
-# See what happened
+# Replay what happened
 sessions = BlackBox.list_sessions()
-BlackBox.replay(sessions[0].session_id)
 ```
-
-That's it. Every LLM call, tool use, cost, and error is now recorded locally.
 
 ---
 
@@ -59,84 +60,73 @@ That's it. Every LLM call, tool use, cost, and error is now recorded locally.
 
 | Event | Details |
 |---|---|
-| 🤖 **LLM call** | model, prompt, output, input/output tokens, cost, latency |
-| 🔧 **Tool call** | name, arguments, return value, execution time |
-| ❌ **Error** | type, message, full stack trace, timestamp |
+| 🤖 LLM call | model, prompt, output, tokens, cost, latency |
+| 🔧 Tool call | name, arguments, return value, execution time |
+| ❌ Error | type, message, full stack trace |
 
-All data is stored in a local SQLite file (`~/.agentblackbox/recordings.db`).  
-Nothing is sent to any external server.
+All data stored in local SQLite. **Nothing sent externally.**
 
 ---
 
 ## Usage patterns
 
-### Decorator
 ```python
+# Decorator
 @BlackBox.record(agent_name="coder")
-def coding_agent(task):
-    ...
-```
+def coding_agent(task): ...
 
-### Context manager
-```python
+# Context manager
 with BlackBox.session("planner") as bb:
-    plan = agent.run(task)
-    bb.record_tool_call("search", {"query": task}, result=plan)
-```
+    bb.record_tool_call("search", {"q": task}, result)
 
-### Manual recording
-```python
-with BlackBox.session("custom") as bb:
-    bb.record_llm_call(
-        model="gpt-4o",
-        input_text="Summarize this",
-        output_text="Here is a summary...",
-        input_tokens=150,
-        output_tokens=80,
-        duration_ms=400.0,
-    )
-```
-
-### OpenAI Agents SDK (auto-instrument)
-```python
+# One-line OpenAI Agents SDK instrumentation
 from agentblackbox.integrations import patch_openai_agents
-patch_openai_agents()  # All agents recorded automatically
+patch_openai_agents()
 ```
+
+---
+
+## Privacy & Security
+
+```python
+BlackBox.configure(
+    masking=True,
+    mask_patterns=["credit_card", "email", "api_key"],
+)
+```
+
+Built-in patterns: credit card, email, phone (JP/US), IPv4, API key, AWS key, JWT, SSN.
+Custom patterns: `custom_mask_patterns={"MY_ID": r"EMP-\d{6}"}`.
+Zero overhead when disabled (default).
 
 ---
 
 ## Web Dashboard
 
 ```bash
-agentblackbox dashboard
-# → http://localhost:8765
+agentblackbox dashboard   # → http://localhost:8765
 ```
 
-- **Sessions** — all runs with status, cost, duration, auto-refreshes every 30s
-- **Timeline** — step-by-step replay with expandable LLM inputs/outputs
-- **Analytics** — daily cost trends, per-agent breakdown, model distribution
+- Sessions list with real-time filter and auto-refresh
+- Animated timeline replay (▶ button)
+- Cost analytics with Chart.js
 
 ---
 
 ## CLI
 
 ```bash
-agentblackbox sessions                    # list all sessions
-agentblackbox replay <session_id>         # console replay
-agentblackbox export <session_id>         # JSON export
-agentblackbox dashboard --port 8765       # web UI
+agentblackbox sessions [--agent NAME] [--status STATUS]
+agentblackbox replay <session_id>
+agentblackbox export <session_id> out.json
+agentblackbox dashboard [--port 8765]
 ```
 
 ---
 
-## Cost tracking
+## 20+ models for cost tracking
 
-Supports 20+ models with automatic cost calculation:
-
-| Provider | Models |
-|---|---|
-| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo, o1, o3-mini |
-| Anthropic | claude-3-5-sonnet, claude-3-opus, claude-3-haiku, claude-3-5-haiku |
+OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek, xAI.
 
 ---
 
