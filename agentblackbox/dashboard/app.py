@@ -224,7 +224,6 @@ class DBHelper:
             "events": events,
             "model_costs": model_costs,
             "tool_counts": tool_counts,
-            "request": None,  # filled by FastAPI
         }
 
     def export_session_json(self, session_id: str) -> Optional[dict]:

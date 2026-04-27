@@ -104,11 +104,7 @@
             <span class="tl-time">{{ ev._dt }}</span>
             <span style="font-size:16px">🔧</span>
             <span style="font-weight:600">{{ ev.tool_name }}</span>
-            {% if ev.error %}
-              <span class="badge badge-error" style="font-size:11px">error</span>
-            {% else %}
-              <span style="color:var(--success);font-size:13px">✓</span>
-            {% endif %}
+            <span style="color:var(--success);font-size:13px">✓</span>
             <span class="tag-pill">{{ "%.0f"|format(ev.latency_ms) }}ms</span>
             <span class="tl-arrow">▶</span>
           </summary>
@@ -117,17 +113,10 @@
               <div class="tl-section-title">Arguments</div>
               <pre><code class="language-json">{{ ev.args | pretty_json }}</code></pre>
             </div>
-            {% if ev.error %}
-            <div class="tl-section">
-              <div class="tl-section-title" style="color:var(--error)">Error</div>
-              <pre><code class="language-plaintext">{{ ev.error }}</code></pre>
-            </div>
-            {% else %}
             <div class="tl-section">
               <div class="tl-section-title">Result</div>
               <pre><code class="language-json">{{ ev.result | pretty_json }}</code></pre>
             </div>
-            {% endif %}
           </div>
         </details>
       </div>

@@ -57,14 +57,6 @@
       <option value="running" {% if filters.status == "running" %}selected{% endif %}>Running</option>
     </select>
   </div>
-  <div class="filter-group">
-    <label>From</label>
-    <input type="date" name="date_from" value="{{ filters.date_from }}">
-  </div>
-  <div class="filter-group">
-    <label>To</label>
-    <input type="date" name="date_to" value="{{ filters.date_to }}">
-  </div>
   <span id="loading" class="htmx-indicator" style="margin-left:4px;align-self:flex-end;padding-bottom:8px">
     <span class="spinner"></span>
   </span>
