@@ -32,9 +32,9 @@ dev = ["pytest>=8", "pytest-cov>=5", "hatch"]
 agentblackbox = "agentblackbox.cli:main"
 
 [project.urls]
-Homepage   = "https://github.com/takumukata/agentblackbox"
-Repository = "https://github.com/takumukata/agentblackbox"
-Issues     = "https://github.com/takumukata/agentblackbox/issues"
+Homepage   = "https://github.com/taku629/agentblackbox"
+Repository = "https://github.com/taku629/agentblackbox"
+Issues     = "https://github.com/taku629/agentblackbox/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentblackbox"]

@@ -3,10 +3,11 @@
 **A flight recorder for AI agents.**
 Record every decision, tool call, and failure. Replay them later.
 
-![PyPI](https://img.shields.io/pypi/v/agentblackbox)
-![Python](https://img.shields.io/pypi/pyversions/agentblackbox)
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-97%20passed-brightgreen)
+[![PyPI](https://img.shields.io/pypi/v/agentblackbox)](https://pypi.org/project/agentblackbox/)
+[![Python](https://img.shields.io/pypi/pyversions/agentblackbox)](https://pypi.org/project/agentblackbox/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/taku629/agentblackbox/blob/main/LICENSE)
+[![Tests](https://img.shields.io/badge/tests-97%20passed-brightgreen)](https://github.com/taku629/agentblackbox/actions)
+[![GitHub](https://img.shields.io/badge/GitHub-taku629%2Fagentblackbox-181717?logo=github)](https://github.com/taku629/agentblackbox)
 
 ---
 
