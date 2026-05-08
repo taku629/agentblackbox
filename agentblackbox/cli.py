@@ -89,6 +89,7 @@ def _cmd_dashboard(args: list[str]) -> None:
     host = "0.0.0.0"
     port = 8765
     db_path = None
+    api_key = None
     i = 0
     while i < len(args):
         if args[i] == "--host" and i + 1 < len(args):
@@ -97,6 +98,15 @@ def _cmd_dashboard(args: list[str]) -> None:
             port = int(args[i + 1]); i += 2
         elif args[i] == "--db" and i + 1 < len(args):
             db_path = args[i + 1]; i += 2
+        elif args[i] == "--api-key" and i + 1 < len(args):
+            api_key = args[i + 1]; i += 2
+        elif args[i] == "--cloud":
+            import secrets
+            api_key = secrets.token_urlsafe(32)
+            print(f"  Generated API key: abx_{api_key}")
+            print(f"  Set AGENTBLACKBOX_API_KEY=abx_{api_key} in your agents\n")
+            api_key = f"abx_{api_key}"
+            i += 1
         else:
             i += 1
 
@@ -108,7 +118,8 @@ def _cmd_dashboard(args: list[str]) -> None:
         print("  pip install agentblackbox[dashboard]")
         sys.exit(1)
 
-    app = create_app(db_path=db_path)
-    print(f"  AgentBlackBox Dashboard → http://localhost:{port}")
+    app = create_app(db_path=db_path, api_key=api_key)
+    mode = "cloud" if api_key else "local"
+    print(f"  AgentBlackBox Dashboard [{mode}] → http://localhost:{port}")
     print(f"  Press Ctrl+C to stop\n")
     uvicorn.run(app, host=host, port=port, log_level="warning")

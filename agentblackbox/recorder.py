@@ -47,11 +47,12 @@ class BlackBox:
         agent_name: str,
         session_id: Optional[str] = None,
         db_path: Optional[Path] = None,
+        storage: Optional[SQLiteStorage] = None,
     ) -> None:
         self.agent_name = agent_name
         self.session_id = session_id or str(uuid.uuid4())
         self._db_path = db_path
-        self._storage: Optional[SQLiteStorage] = None
+        self._storage: Optional[SQLiteStorage] = storage
         self._session: Optional[Session] = None
         self._token: Optional[contextvars.Token] = None
         self._total_cost = 0.0
@@ -106,19 +107,26 @@ class BlackBox:
         agent_name: str,
         session_id: Optional[str] = None,
         db_path: Optional[Path] = None,
+        storage: Optional[SQLiteStorage] = None,
     ) -> "BlackBox":
-        return cls(agent_name, session_id=session_id, db_path=db_path)
+        return cls(
+            agent_name,
+            session_id=session_id,
+            db_path=db_path,
+            storage=storage,
+        )
 
     @classmethod
     def record(
         cls,
         agent_name: str,
         db_path: Optional[Path] = None,
+        storage: Optional[SQLiteStorage] = None,
     ) -> Callable[[F], F]:
         def decorator(func: F) -> F:
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                with cls.session(agent_name, db_path=db_path):
+                with cls.session(agent_name, db_path=db_path, storage=storage):
                     return func(*args, **kwargs)
 
             return wrapper  # type: ignore[return-value]

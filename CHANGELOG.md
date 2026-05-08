@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2026-05-08
+
+### Added
+- `patch_anthropic()` — auto-instrumentation for Anthropic Python SDK (sync + async)
+- `BlackBoxCallbackHandler` — LangChain callback handler for LLM + tool recording
+- `RemoteStorage` — push recordings to a remote AgentBlackBox cloud server
+- Cloud ingest API (`POST /api/v1/ingest/*`) in the dashboard with API key auth
+- `agentblackbox dashboard --cloud` flag: generates API key and starts cloud-mode server
+- Landing page (`site/index.html`) deployable to GitHub Pages
+- GitHub Actions workflow for automatic GitHub Pages deployment
+
 ## [0.1.0] - 2026-04-26
 
 ### Added

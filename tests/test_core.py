@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from agentblackbox import BlackBox, calculate_cost, list_supported_models
+from agentblackbox.remote import RemoteStorage
 from agentblackbox.storage import SQLiteStorage
 from agentblackbox.models import Session, LLMCall, ToolCall, ErrorRecord
 
@@ -383,3 +384,41 @@ class TestCurrentContext:
                 assert BlackBox.current() is inner
             # after inner exits, current should be outer again
             assert BlackBox.current() is outer
+
+
+class TestCustomStorage:
+    def test_session_accepts_storage_instance(self, tmp_db):
+        storage = SQLiteStorage(tmp_db)
+        with BlackBox.session("storage_agent", storage=storage) as bb:
+            bb.record_tool_call("ping", {}, "pong", 1.0)
+
+        sessions = storage.list_sessions()
+        assert len(sessions) == 1
+        assert sessions[0].agent_name == "storage_agent"
+
+    def test_decorator_accepts_storage_instance(self, tmp_db):
+        storage = SQLiteStorage(tmp_db)
+
+        @BlackBox.record(agent_name="decorator_storage", storage=storage)
+        def run():
+            return "ok"
+
+        assert run() == "ok"
+        sessions = storage.list_sessions()
+        assert len(sessions) == 1
+        assert sessions[0].agent_name == "decorator_storage"
+
+    def test_remote_storage_inherits_sqlite_storage_contract(self, tmp_db):
+        storage = RemoteStorage(
+            api_key="abx_test",
+            endpoint="http://127.0.0.1:9",
+            db_path=tmp_db,
+            timeout_s=0.01,
+        )
+
+        with BlackBox.session("remote_agent", storage=storage):
+            pass
+
+        sessions = storage.list_sessions()
+        assert len(sessions) == 1
+        assert sessions[0].agent_name == "remote_agent"

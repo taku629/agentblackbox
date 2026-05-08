@@ -3,8 +3,9 @@ from .recorder import BlackBox
 from .storage import SQLiteStorage, DEFAULT_DB_PATH
 from .cost import calculate_cost, list_supported_models
 from .models import Session, LLMCall, ToolCall, ErrorRecord
+from .integrations import patch_anthropic, patch_openai_agents, BlackBoxCallbackHandler
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "BlackBox",
     "SQLiteStorage",
@@ -15,4 +16,7 @@ __all__ = [
     "LLMCall",
     "ToolCall",
     "ErrorRecord",
+    "patch_anthropic",
+    "patch_openai_agents",
+    "BlackBoxCallbackHandler",
 ]
