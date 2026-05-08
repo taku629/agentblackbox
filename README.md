@@ -53,6 +53,30 @@ BlackBox.replay(sessions[0].session_id)
 
 That's it. Every LLM call, tool use, cost, and error is now recorded locally.
 
+## Remote / hosted mode
+
+You can mirror recordings to a hosted AgentBlackBox dashboard while still keeping the
+local SQLite log:
+
+```python
+from agentblackbox import BlackBox
+from agentblackbox.remote import RemoteStorage
+
+remote_store = RemoteStorage(
+    api_key="abx_...",
+    endpoint="https://your-agentblackbox.example.com",
+)
+
+with BlackBox.session("researcher", storage=remote_store) as bb:
+    bb.record_tool_call("search", {"q": "ai evals"}, {"hits": 12}, 83.4)
+```
+
+To run the dashboard in authenticated cloud mode:
+
+```bash
+agentblackbox dashboard --cloud
+```
+
 ---
 
 ## What gets recorded
