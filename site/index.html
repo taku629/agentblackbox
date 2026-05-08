@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentBlackBox — Flight Recorder for AI Agents</title>
+  <meta name="description" content="Record every decision, tool call, and failure your AI agents make. Replay them later. Zero dependencies." />
+  <meta property="og:title" content="AgentBlackBox" />
+  <meta property="og:description" content="A flight recorder for AI agents. Record everything, replay anything." />
+  <meta property="og:type" content="website" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --accent: #6366f1;
+      --accent2: #8b5cf6;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --code-bg: #0d0d14;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 56px;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo { font-weight: 700; font-size: 1rem; display: flex; align-items: center; gap: .5rem; }
+    .nav-logo span { color: var(--accent); }
+    .nav-links { display: flex; gap: 1.5rem; font-size: .9rem; color: var(--muted); }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .btn {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .45rem 1rem; border-radius: 6px; font-size: .85rem; font-weight: 600;
+      cursor: pointer; border: none; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+    /* ── HERO ── */
+    .hero {
+      text-align: center;
+      padding: 6rem 1.5rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: -120px; left: 50%; transform: translateX(-50%);
+      width: 700px; height: 700px;
+      background: radial-gradient(circle, rgba(99,102,241,.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(99,102,241,.12); color: var(--accent);
+      border: 1px solid rgba(99,102,241,.3);
+      border-radius: 99px; padding: .2rem .75rem; font-size: .8rem; font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800; line-height: 1.15;
+      letter-spacing: -.02em;
+      margin-bottom: 1.25rem;
+    }
+    .hero h1 em { font-style: normal; color: var(--accent); }
+    .hero p {
+      font-size: 1.15rem; color: var(--muted);
+      max-width: 560px; margin: 0 auto 2rem;
+    }
+    .hero-actions { display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+
+    .install-box {
+      margin: 3rem auto 0;
+      max-width: 420px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: .9rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem;
+    }
+    .install-box .prompt { color: var(--accent); }
+    .copy-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 4px; padding: .2rem .5rem; font-size: .75rem; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── STATS ── */
+    .stats {
+      display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap;
+      padding: 2.5rem 1.5rem;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .stat { text-align: center; }
+    .stat .num { font-size: 1.8rem; font-weight: 800; color: var(--text); }
+    .stat .label { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+
+    /* ── SECTIONS ── */
+    section { padding: 5rem 1.5rem; }
+    .container { max-width: 1080px; margin: 0 auto; }
+
+    .section-label {
+      font-size: .8rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: .75rem;
+    }
+    h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; margin-bottom: .75rem; }
+    .subtitle { font-size: 1.05rem; color: var(--muted); max-width: 540px; }
+
+    /* ── PROBLEM ── */
+    .problem-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem; margin-top: 3rem;
+    }
+    .problem-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem;
+    }
+    .problem-card .icon { font-size: 1.5rem; margin-bottom: .75rem; }
+    .problem-card h3 { font-size: .95rem; font-weight: 700; margin-bottom: .4rem; }
+    .problem-card p { font-size: .85rem; color: var(--muted); }
+
+    /* ── CODE DEMO ── */
+    .demo-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;
+      margin-top: 3rem;
+      align-items: start;
+    }
+    @media (max-width: 700px) { .demo-grid { grid-template-columns: 1fr; } }
+
+    pre {
+      background: var(--code-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.25rem;
+      overflow-x: auto;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: .82rem; line-height: 1.65;
+    }
+    .token-comment { color: #4a5568; }
+    .token-keyword { color: #a78bfa; }
+    .token-string { color: #86efac; }
+    .token-fn { color: #60a5fa; }
+    .token-dec { color: #f472b6; }
+
+    /* ── FEATURES ── */
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem; margin-top: 3rem;
+    }
+    .feature-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem;
+      transition: border-color .2s;
+    }
+    .feature-card:hover { border-color: var(--accent); }
+    .feature-icon {
+      width: 40px; height: 40px; border-radius: 8px;
+      background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.25);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; margin-bottom: 1rem;
+    }
+    .feature-card h3 { font-size: .95rem; font-weight: 700; margin-bottom: .4rem; }
+    .feature-card p { font-size: .85rem; color: var(--muted); }
+
+    /* ── INTEGRATIONS ── */
+    .integrations-grid {
+      display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2.5rem;
+    }
+    .integration-badge {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: .6rem 1.1rem;
+      font-size: .85rem; font-weight: 600; display: flex; align-items: center; gap: .5rem;
+    }
+    .integration-badge .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+    }
+    .dot-green { background: var(--green); }
+    .dot-yellow { background: var(--yellow); }
+
+    /* ── CLOUD ── */
+    .cloud-diagram {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2rem;
+      margin-top: 3rem; font-family: monospace; font-size: .85rem;
+      line-height: 2;
+    }
+    .cloud-diagram .arrow { color: var(--accent); }
+    .cloud-diagram .box {
+      display: inline-block;
+      background: var(--code-bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: .2rem .6rem;
+    }
+
+    /* ── PRICING ── */
+    .pricing-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem; margin-top: 3rem;
+    }
+    .pricing-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 2rem;
+    }
+    .pricing-card.featured {
+      border-color: var(--accent);
+      background: linear-gradient(135deg, rgba(99,102,241,.08), var(--surface));
+    }
+    .plan-name { font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .plan-price { font-size: 2.2rem; font-weight: 800; margin: .5rem 0 .25rem; }
+    .plan-price span { font-size: 1rem; font-weight: 400; color: var(--muted); }
+    .plan-desc { font-size: .85rem; color: var(--muted); margin-bottom: 1.25rem; }
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: .5rem; }
+    .plan-features li { font-size: .85rem; display: flex; align-items: center; gap: .5rem; }
+    .plan-features li::before { content: '✓'; color: var(--green); font-weight: 700; }
+
+    /* ── CTA ── */
+    .cta-section {
+      text-align: center;
+      padding: 6rem 1.5rem;
+      background: linear-gradient(135deg, rgba(99,102,241,.06), transparent);
+      border-top: 1px solid var(--border);
+    }
+    .cta-section h2 { font-size: clamp(1.6rem, 3vw, 2.4rem); margin-bottom: 1rem; }
+    .cta-section p { color: var(--muted); margin-bottom: 2rem; }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+      font-size: .85rem; color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">⬛ Agent<span>BlackBox</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#integrations">Integrations</a>
+    <a href="#cloud">Cloud</a>
+    <a href="#pricing">Pricing</a>
+    <a href="https://github.com/taku629/agentblackbox">Docs</a>
+  </div>
+  <a href="https://github.com/taku629/agentblackbox" class="btn btn-primary">GitHub →</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="badge">v0.2 — Now with Anthropic &amp; LangChain support</div>
+  <h1>A <em>flight recorder</em><br/>for your AI agents.</h1>
+  <p>Record every decision, tool call, and failure. Replay them later. Zero dependencies, one decorator.</p>
+  <div class="hero-actions">
+    <a href="#quickstart" class="btn btn-primary">Get Started Free</a>
+    <a href="https://github.com/taku629/agentblackbox" class="btn btn-ghost">View on GitHub</a>
+  </div>
+  <div class="install-box">
+    <span><span class="prompt">$</span> pip install agentblackbox</span>
+    <button class="copy-btn" onclick="navigator.clipboard.writeText('pip install agentblackbox');this.textContent='Copied!'">Copy</button>
+  </div>
+</section>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat"><div class="num">0</div><div class="label">dependencies (core)</div></div>
+  <div class="stat"><div class="num">1</div><div class="label">line to instrument</div></div>
+  <div class="stat"><div class="num">3+</div><div class="label">SDK integrations</div></div>
+  <div class="stat"><div class="num">20+</div><div class="label">models with cost tracking</div></div>
+</div>
+
+<!-- PROBLEM -->
+<section id="problem">
+  <div class="container">
+    <div class="section-label">The Problem</div>
+    <h2>72% of AI agent projects never reach production.</h2>
+    <p class="subtitle">Not because the agents are wrong — but because they're invisible. You can't debug what you can't see.</p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="icon">🔍</div>
+        <h3>No visibility</h3>
+        <p>When an agent fails, you have no idea which tool call went wrong or what the LLM was thinking.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon">💸</div>
+        <h3>Surprise bills</h3>
+        <p>Token costs accumulate silently. You only see the damage at the end of the month.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon">🔄</div>
+        <h3>Can't reproduce bugs</h3>
+        <p>Flaky failures that only happen in production, with no way to replay the exact sequence of events.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon">🚫</div>
+        <h3>Framework lock-in</h3>
+        <p>Existing tools (LangSmith, W&B) require you to commit to one framework. AgentBlackBox works with any.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUICKSTART -->
+<section id="quickstart" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">Quickstart</div>
+    <h2>One decorator. Full visibility.</h2>
+    <p class="subtitle">Drop it on any function. Existing code is unchanged.</p>
+    <div class="demo-grid">
+      <div>
+        <p style="font-size:.8rem; color:var(--muted); margin-bottom:.5rem;">BEFORE</p>
+        <pre><span class="token-keyword">def</span> <span class="token-fn">run_agent</span>(task: str):
+    result = client.messages.create(
+        model=<span class="token-string">"claude-sonnet-4-6"</span>,
+        messages=[{<span class="token-string">"role"</span>: <span class="token-string">"user"</span>,
+                   <span class="token-string">"content"</span>: task}]
+    )
+    <span class="token-keyword">return</span> result.content[0].text</pre>
+      </div>
+      <div>
+        <p style="font-size:.8rem; color:var(--muted); margin-bottom:.5rem;">AFTER — full recording</p>
+        <pre><span class="token-keyword">from</span> agentblackbox <span class="token-keyword">import</span> BlackBox
+
+<span class="token-dec">@BlackBox.record</span>(agent_name=<span class="token-string">"researcher"</span>)
+<span class="token-keyword">def</span> <span class="token-fn">run_agent</span>(task: str):
+    result = client.messages.create(
+        model=<span class="token-string">"claude-sonnet-4-6"</span>,
+        messages=[{<span class="token-string">"role"</span>: <span class="token-string">"user"</span>,
+                   <span class="token-string">"content"</span>: task}]
+    )
+    <span class="token-keyword">return</span> result.content[0].text</pre>
+      </div>
+    </div>
+    <div style="margin-top: 2rem;">
+      <p style="font-size:.8rem; color:var(--muted); margin-bottom:.5rem;">AUTO-INSTRUMENT WITH PATCH (zero code changes)</p>
+      <pre><span class="token-keyword">from</span> agentblackbox <span class="token-keyword">import</span> patch_anthropic, BlackBox
+
+patch_anthropic()  <span class="token-comment"># patches ALL anthropic calls globally</span>
+
+<span class="token-keyword">with</span> BlackBox.session(<span class="token-string">"my-agent"</span>) <span class="token-keyword">as</span> bb:
+    run_my_existing_agent()  <span class="token-comment"># no changes needed</span>
+
+bb.replay()  <span class="token-comment"># see the full timeline</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2>Everything you need to understand your agents.</h2>
+    <p class="subtitle">Built for developers who ship real AI agents to production.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">⏱️</div>
+        <h3>Full timeline replay</h3>
+        <p>Replay any session in your terminal with timestamps, token counts, costs, and full input/output.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💰</div>
+        <h3>Cost tracking</h3>
+        <p>Auto-calculates cost per session, per model, per agent. Supports 20+ models from OpenAI and Anthropic.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔧</div>
+        <h3>Tool call recording</h3>
+        <p>Every tool invocation is captured: name, arguments, result, duration, and errors.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <h3>Web dashboard</h3>
+        <p>Local dashboard with session list, timeline detail view, and cost analytics charts.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">☁️</div>
+        <h3>Cloud ingest API</h3>
+        <p>Run a shared cloud dashboard — remote agents POST recordings in real-time via API key auth.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📦</div>
+        <h3>Zero dependencies</h3>
+        <p>Core library has no dependencies. Pure Python 3.10+. SQLite storage. Nothing to configure.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section id="integrations" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">Integrations</div>
+    <h2>Works with every major SDK.</h2>
+    <p class="subtitle">Auto-instrumentation — no code changes in your agent logic.</p>
+    <div class="integrations-grid">
+      <div class="integration-badge"><span class="dot dot-green"></span> Anthropic SDK</div>
+      <div class="integration-badge"><span class="dot dot-green"></span> OpenAI Agents SDK</div>
+      <div class="integration-badge"><span class="dot dot-green"></span> LangChain</div>
+      <div class="integration-badge"><span class="dot dot-yellow"></span> LlamaIndex (coming soon)</div>
+      <div class="integration-badge"><span class="dot dot-yellow"></span> CrewAI (coming soon)</div>
+      <div class="integration-badge"><span class="dot dot-green"></span> Manual API (any framework)</div>
+    </div>
+    <div style="margin-top: 2.5rem;">
+      <pre><span class="token-comment"># Anthropic</span>
+<span class="token-keyword">from</span> agentblackbox <span class="token-keyword">import</span> patch_anthropic
+patch_anthropic()
+
+<span class="token-comment"># OpenAI Agents SDK</span>
+<span class="token-keyword">from</span> agentblackbox.integrations <span class="token-keyword">import</span> patch_openai_agents
+patch_openai_agents()
+
+<span class="token-comment"># LangChain</span>
+<span class="token-keyword">from</span> agentblackbox <span class="token-keyword">import</span> BlackBoxCallbackHandler
+handler = BlackBoxCallbackHandler()
+chain.invoke(input, config={<span class="token-string">"callbacks"</span>: [handler]})</pre>
+    </div>
+  </div>
+</section>
+
+<!-- CLOUD -->
+<section id="cloud">
+  <div class="container">
+    <div class="section-label">Cloud Mode</div>
+    <h2>Share recordings across your team.</h2>
+    <p class="subtitle">Launch a shared dashboard. Agents in production push recordings in real-time.</p>
+    <div class="cloud-diagram">
+      <div style="margin-bottom:.5rem; color: var(--muted); font-size:.8rem;">ARCHITECTURE</div>
+      <span class="box">Agent A (prod)</span> <span class="arrow">──POST /api/v1/ingest──▶</span> <span class="box">Cloud Dashboard</span> <span class="arrow">◀── browser</span><br/>
+      <span class="box">Agent B (staging)</span> <span class="arrow">──POST /api/v1/ingest──▶</span> <span class="box">  (your server)  </span><br/>
+      <span class="box">Agent C (local)</span> <span class="arrow">───────────────────────▶</span>
+    </div>
+    <div style="margin-top: 2rem;">
+      <pre><span class="token-comment"># 1. Start cloud dashboard (generates API key)</span>
+agentblackbox dashboard --cloud --port 8765
+
+<span class="token-comment"># 2. In your agents — use RemoteStorage</span>
+<span class="token-keyword">from</span> agentblackbox.remote <span class="token-keyword">import</span> RemoteStorage
+<span class="token-keyword">from</span> agentblackbox <span class="token-keyword">import</span> BlackBox
+
+store = RemoteStorage(
+    api_key=<span class="token-string">"abx_..."</span>,
+    endpoint=<span class="token-string">"https://your-dashboard.example.com"</span>,
+)
+bb = BlackBox.session(<span class="token-string">"prod-agent"</span>)
+bb._storage = store
+bb.start()</pre>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">Pricing</div>
+    <h2>Free forever for individuals.</h2>
+    <p class="subtitle">Open source core. Paid cloud hosting when you need it.</p>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <div class="plan-name">Open Source</div>
+        <div class="plan-price">$0</div>
+        <div class="plan-desc">Self-hosted, MIT license. Forever free.</div>
+        <ul class="plan-features">
+          <li>Unlimited local recordings</li>
+          <li>Local web dashboard</li>
+          <li>All SDK integrations</li>
+          <li>CLI tools</li>
+          <li>Self-hosted cloud mode</li>
+        </ul>
+        <a href="https://github.com/taku629/agentblackbox" class="btn btn-ghost" style="margin-top:1.5rem; width:100%; justify-content:center;">Get Started →</a>
+      </div>
+      <div class="pricing-card featured">
+        <div class="plan-name">Cloud <span style="background:var(--accent);color:#fff;border-radius:4px;padding:.1rem .4rem;font-size:.7rem;">Coming Soon</span></div>
+        <div class="plan-price">$19<span>/mo</span></div>
+        <div class="plan-desc">Managed cloud dashboard. No ops.</div>
+        <ul class="plan-features">
+          <li>Everything in Open Source</li>
+          <li>Managed cloud hosting</li>
+          <li>Team sharing</li>
+          <li>90-day retention</li>
+          <li>Slack/email alerts</li>
+        </ul>
+        <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox Cloud Waitlist" class="btn btn-primary" style="margin-top:1.5rem; width:100%; justify-content:center;">Join Waitlist →</a>
+      </div>
+      <div class="pricing-card">
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-price">Custom</div>
+        <div class="plan-desc">On-premise or dedicated cloud.</div>
+        <ul class="plan-features">
+          <li>Everything in Cloud</li>
+          <li>SSO / SAML</li>
+          <li>Unlimited retention</li>
+          <li>SLA guarantee</li>
+          <li>Dedicated support</li>
+        </ul>
+        <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox Enterprise" class="btn btn-ghost" style="margin-top:1.5rem; width:100%; justify-content:center;">Contact Us →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2>Start recording your agents today.</h2>
+  <p>Zero config. Zero dependencies. One pip install.</p>
+  <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;">
+    <a href="https://github.com/taku629/agentblackbox" class="btn btn-primary">View on GitHub →</a>
+    <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox Cloud Waitlist" class="btn btn-ghost">Join Cloud Waitlist</a>
+  </div>
+</section>
+
+<footer>
+  <div>⬛ AgentBlackBox — MIT License</div>
+  <div style="display:flex;gap:1.5rem;">
+    <a href="https://github.com/taku629/agentblackbox">GitHub</a>
+    <a href="https://pypi.org/project/agentblackbox/">PyPI</a>
+    <a href="mailto:karisutefin73@gmail.com">Contact</a>
+  </div>
+</footer>
+
+</body>
+</html>
