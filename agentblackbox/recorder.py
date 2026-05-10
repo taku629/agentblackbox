@@ -209,6 +209,25 @@ class BlackBox:
         self._store().insert_error(err)
         return err
 
+    # ── events ────────────────────────────────────────────────────────────
+
+    def iter_events(self, session_id: Optional[str] = None):
+        """Yield (timestamp, kind, event) tuples in chronological order.
+
+        kind is one of: "llm", "tool", "error"
+        """
+        sid = session_id or self.session_id
+        store = self._store()
+        events: list[tuple[int, str, Any]] = []
+        for c in store.get_llm_calls(sid):
+            events.append((c.timestamp, "llm", c))
+        for c in store.get_tool_calls(sid):
+            events.append((c.timestamp, "tool", c))
+        for e in store.get_errors(sid):
+            events.append((e.timestamp, "error", e))
+        events.sort(key=lambda x: x[0])
+        yield from events
+
     # ── query ─────────────────────────────────────────────────────────────
 
     @classmethod
@@ -333,6 +352,69 @@ class BlackBox:
             ],
         }
         return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+    @classmethod
+    def load_recording(
+        cls,
+        session_id: str,
+        db_path: Optional[Path] = None,
+    ) -> "MockBlackBox":
+        """Load a previously recorded session for deterministic replay in tests."""
+        return MockBlackBox(session_id, db_path=db_path)
+
+
+class MockBlackBox(BlackBox):
+    """A BlackBox backed by pre-recorded responses for deterministic testing.
+
+    Instead of making live API calls, agent code can call pop_llm_response()
+    and pop_tool_result() to consume responses recorded in a prior session.
+
+    Usage::
+
+        mock = BlackBox.load_recording("session-id-abc")
+        # In your agent test:
+        recorded = mock.pop_llm_response()
+        assert recorded.output_text == "expected answer"
+    """
+
+    def __init__(self, original_session_id: str, db_path: Optional[Path] = None) -> None:
+        store = _get_storage(db_path)
+        original = store.get_session(original_session_id)
+        if original is None:
+            raise ValueError(f"Session not found: {original_session_id}")
+        super().__init__(f"{original.agent_name}__replay", db_path=db_path)
+        self._original_session_id = original_session_id
+        self._llm_queue = list(store.get_llm_calls(original_session_id))
+        self._tool_queue = list(store.get_tool_calls(original_session_id))
+        self._llm_index = 0
+        self._tool_index = 0
+
+    @property
+    def original_session_id(self) -> str:
+        return self._original_session_id
+
+    def pop_llm_response(self) -> Optional[LLMCall]:
+        """Return the next recorded LLM response in order, or None if exhausted."""
+        if self._llm_index >= len(self._llm_queue):
+            return None
+        result = self._llm_queue[self._llm_index]
+        self._llm_index += 1
+        return result
+
+    def pop_tool_result(self) -> Optional[ToolCall]:
+        """Return the next recorded tool result in order, or None if exhausted."""
+        if self._tool_index >= len(self._tool_queue):
+            return None
+        result = self._tool_queue[self._tool_index]
+        self._tool_index += 1
+        return result
+
+    def remaining_llm_responses(self) -> int:
+        return len(self._llm_queue) - self._llm_index
+
+    def remaining_tool_results(self) -> int:
+        return len(self._tool_queue) - self._tool_index
 
 
 def _print_truncated(label: str, text: str, max_len: int) -> None:

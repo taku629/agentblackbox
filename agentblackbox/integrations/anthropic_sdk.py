@@ -96,21 +96,37 @@ def _patch_async(anthropic: Any) -> None:
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _extract_input_text(messages: list) -> str:
+    parts = []
+    for m in messages:
+        content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block["text"])
+                elif hasattr(block, "text"):
+                    parts.append(block.text)
+    return " | ".join(parts)
+
+
+def _extract_output_text(response: Any) -> str:
+    if not hasattr(response, "content"):
+        return ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            return block.text
+        if isinstance(block, dict) and block.get("type") == "text":
+            return block["text"]
+    return ""
+
+
 def _record_response(bb: Any, kwargs: dict, response: Any, duration_ms: float) -> None:
     try:
         model = kwargs.get("model", getattr(response, "model", "unknown"))
-
-        messages = kwargs.get("messages", [])
-        input_text = " | ".join(
-            (m.get("content", "") if isinstance(m.get("content"), str) else "")
-            for m in messages
-        )
-
-        output_text = ""
-        content = getattr(response, "content", [])
-        if content:
-            first = content[0]
-            output_text = getattr(first, "text", "") or ""
+        input_text = _extract_input_text(kwargs.get("messages", []))
+        output_text = _extract_output_text(response)
 
         usage = getattr(response, "usage", None)
         input_tokens = getattr(usage, "input_tokens", 0) if usage else 0

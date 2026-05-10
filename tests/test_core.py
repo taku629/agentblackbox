@@ -422,3 +422,186 @@ class TestCustomStorage:
         sessions = storage.list_sessions()
         assert len(sessions) == 1
         assert sessions[0].agent_name == "remote_agent"
+# ── iter_events ───────────────────────────────────────────────────────────────
+
+
+class TestIterEvents:
+    def test_empty_session(self, tmp_db):
+        with BlackBox.session("empty_agent", db_path=tmp_db) as bb:
+            pass
+        events = list(bb.iter_events())
+        assert events == []
+
+    def test_events_ordered_by_timestamp(self, tmp_db):
+        with BlackBox.session("ordered_agent", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", "prompt", "response", 10, 5, 100.0)
+            bb.record_tool_call("search", {"q": "test"}, ["result"], 50.0)
+
+        events = list(bb.iter_events())
+        assert len(events) == 2
+        kinds = [k for _, k, _ in events]
+        assert "llm" in kinds
+        assert "tool" in kinds
+        # timestamps should be sorted
+        timestamps = [ts for ts, _, _ in events]
+        assert timestamps == sorted(timestamps)
+
+    def test_events_include_errors(self, tmp_db):
+        with pytest.raises(ValueError):
+            with BlackBox.session("err_agent", db_path=tmp_db) as bb:
+                bb.record_llm_call("gpt-4o", "in", "out", 10, 5, 100.0)
+                raise ValueError("test error")
+
+        events = list(bb.iter_events())
+        kinds = {k for _, k, _ in events}
+        assert "llm" in kinds
+        assert "error" in kinds
+
+    def test_iter_events_with_explicit_session_id(self, tmp_db):
+        with BlackBox.session("explicit_agent", db_path=tmp_db) as bb:
+            bb.record_tool_call("calc", {}, 42, 10.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        sid = sessions[0].session_id
+        events = list(bb.iter_events(session_id=sid))
+        assert len(events) == 1
+        assert events[0][1] == "tool"
+
+
+# ── MockBlackBox ──────────────────────────────────────────────────────────────
+
+
+class TestMockBlackBox:
+    def test_load_recording_basic(self, tmp_db):
+        from agentblackbox import MockBlackBox
+
+        with BlackBox.session("recorded_agent", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", "hello", "world", 10, 5, 100.0)
+            bb.record_tool_call("search", {"q": "test"}, ["r1", "r2"], 50.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        mock = BlackBox.load_recording(sessions[0].session_id, db_path=tmp_db)
+        assert isinstance(mock, MockBlackBox)
+        assert mock.original_session_id == sessions[0].session_id
+
+    def test_pop_llm_response_returns_recorded(self, tmp_db):
+        with BlackBox.session("pop_llm", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", "question", "answer", 100, 50, 200.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        mock = BlackBox.load_recording(sessions[0].session_id, db_path=tmp_db)
+
+        resp = mock.pop_llm_response()
+        assert resp is not None
+        assert resp.output_text == "answer"
+        assert resp.model == "gpt-4o"
+        assert resp.input_tokens == 100
+
+    def test_pop_llm_response_exhausted_returns_none(self, tmp_db):
+        with BlackBox.session("exhaust", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", "q", "a", 10, 5, 50.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        mock = BlackBox.load_recording(sessions[0].session_id, db_path=tmp_db)
+
+        mock.pop_llm_response()  # consume the one response
+        assert mock.pop_llm_response() is None
+
+    def test_pop_tool_result(self, tmp_db):
+        with BlackBox.session("pop_tool", db_path=tmp_db) as bb:
+            bb.record_tool_call("calculator", {"expr": "2+2"}, 4, 5.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        mock = BlackBox.load_recording(sessions[0].session_id, db_path=tmp_db)
+
+        tool = mock.pop_tool_result()
+        assert tool is not None
+        assert tool.tool_name == "calculator"
+        assert tool.result == 4
+
+    def test_remaining_counts(self, tmp_db):
+        with BlackBox.session("counts", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", "a", "b", 10, 5, 50.0)
+            bb.record_llm_call("gpt-4o", "c", "d", 10, 5, 50.0)
+            bb.record_tool_call("t", {}, "r", 10.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        mock = BlackBox.load_recording(sessions[0].session_id, db_path=tmp_db)
+
+        assert mock.remaining_llm_responses() == 2
+        assert mock.remaining_tool_results() == 1
+        mock.pop_llm_response()
+        assert mock.remaining_llm_responses() == 1
+
+    def test_load_nonexistent_session_raises(self, tmp_db):
+        with pytest.raises(ValueError, match="Session not found"):
+            BlackBox.load_recording("no-such-id", db_path=tmp_db)
+
+    def test_pop_tool_result_exhausted(self, tmp_db):
+        with BlackBox.session("no_tools", db_path=tmp_db) as bb:
+            pass
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        mock = BlackBox.load_recording(sessions[0].session_id, db_path=tmp_db)
+        assert mock.pop_tool_result() is None
+
+
+# ── replay with all event types ───────────────────────────────────────────────
+
+
+class TestReplayWithAllEvents:
+    def test_replay_shows_tool_calls(self, tmp_db, capsys):
+        with BlackBox.session("full_replay", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", "q", "a", 10, 5, 50.0)
+            bb.record_tool_call("search", {"q": "test"}, "result", 20.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        bb.replay(sessions[0].session_id)
+        out = capsys.readouterr().out
+        assert "TOOL" in out
+        assert "search" in out
+
+    def test_replay_shows_errors(self, tmp_db, capsys):
+        with pytest.raises(RuntimeError):
+            with BlackBox.session("error_replay", db_path=tmp_db) as bb:
+                raise RuntimeError("test boom")
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        bb.replay(sessions[0].session_id)
+        out = capsys.readouterr().out
+        assert "ERROR" in out
+        assert "test boom" in out
+
+    def test_replay_tool_with_error_field(self, tmp_db, capsys):
+        with BlackBox.session("tool_err_replay", db_path=tmp_db) as bb:
+            bb.record_tool_call("broken", {}, None, 10.0, error="timeout")
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        bb.replay(sessions[0].session_id)
+        out = capsys.readouterr().out
+        assert "broken" in out
+        assert "timeout" in out
+
+    def test_replay_truncates_long_text(self, tmp_db, capsys):
+        long_text = "x" * 500
+        with BlackBox.session("trunc_replay", db_path=tmp_db) as bb:
+            bb.record_llm_call("gpt-4o", long_text, long_text, 50, 25, 100.0)
+
+        sessions = BlackBox.list_sessions(db_path=tmp_db)
+        bb.replay(sessions[0].session_id)
+        out = capsys.readouterr().out
+        assert "more chars" in out
+
+
+# ── storage analytics ─────────────────────────────────────────────────────────
+
+
+class TestStorageAnalytics:
+    def test_cost_by_session(self, storage):
+        storage.create_session(Session("s_anal", "agent_z", time.time_ns()))
+        storage.insert_llm_call(LLMCall(
+            id="l_anal", session_id="s_anal", timestamp=time.time_ns(),
+            model="gpt-4o", input_tokens=100, output_tokens=50,
+            input_text="", output_text="", duration_ms=0.0, cost_usd=0.003,
+        ))
+        rows = storage.cost_by_session()
+        assert any(r["session_id"] == "s_anal" for r in rows)

@@ -86,7 +86,7 @@ def _cmd_export(args: list[str]) -> None:
 
 
 def _cmd_dashboard(args: list[str]) -> None:
-    host = "0.0.0.0"
+    host = "127.0.0.1"
     port = 8765
     db_path = None
     api_key = None
