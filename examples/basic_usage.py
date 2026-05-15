@@ -149,34 +149,13 @@ def main() -> None:
     # --- 最新セッションを再生 ---
     if sessions:
         print("\n--- 最新セッションを replay ---")
-        latest = sessions[0]
-        # replay にはセッションが保存済みである必要があるので直接 BlackBox インスタンスから呼ぶ
-        from agentblackbox.storage import SQLiteStorage, DEFAULT_DB_PATH
-        from agentblackbox.recorder import BlackBox as BB
-        tmp = BB.__new__(BB)
-        tmp.session_id = latest.session_id
-        tmp._db_path = None
-        tmp._storage = None
-        tmp._session = None
-        tmp._token = None
-        tmp._total_cost = 0.0
-        tmp.agent_name = latest.agent_name
-        tmp.replay()
+        BlackBox.replay(sessions[0].session_id)
 
     # --- JSON エクスポート ---
     if sessions:
         success_sessions = [s for s in sessions if s.status == "success"]
         if success_sessions:
-            from agentblackbox.recorder import BlackBox as BB
-            tmp = BB.__new__(BB)
-            tmp.session_id = success_sessions[0].session_id
-            tmp._db_path = None
-            tmp._storage = None
-            tmp._session = None
-            tmp._token = None
-            tmp._total_cost = 0.0
-            tmp.agent_name = success_sessions[0].agent_name
-            exported = tmp.export_json()
+            exported = BlackBox.export_json(success_sessions[0].session_id)
             data = json.loads(exported)
             print(f"\nJSON エクスポートサンプル (セッション {data['session']['session_id'][:8]}...):")
             print(f"  LLM 呼び出し数: {len(data['llm_calls'])}")

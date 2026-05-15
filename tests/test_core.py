@@ -314,7 +314,7 @@ class TestBlackBoxExport:
             bb.record_tool_call("t", {}, "r", 10.0)
 
         sessions = BlackBox.list_sessions(db_path=tmp_db)
-        exported = bb.export_json(sessions[0].session_id)
+        exported = bb.export_json(sessions[0].session_id, db_path=tmp_db)
         data = json.loads(exported)
 
         assert data["session"]["agent_name"] == "export_agent"
@@ -323,15 +323,11 @@ class TestBlackBoxExport:
         assert data["llm_calls"][0]["model"] == "gpt-4o"
 
     def test_export_nonexistent_raises(self, tmp_db):
-        bb = BlackBox("x", db_path=tmp_db)
-        bb._storage = SQLiteStorage(tmp_db)
         with pytest.raises(ValueError, match="Session not found"):
-            bb.export_json("nonexistent-id")
+            BlackBox.export_json("nonexistent-id", db_path=tmp_db)
 
     def test_replay_nonexistent(self, tmp_db, capsys):
-        bb = BlackBox("x", db_path=tmp_db)
-        bb._storage = SQLiteStorage(tmp_db)
-        bb.replay("nonexistent-id")
+        BlackBox.replay("nonexistent-id", db_path=tmp_db)
         captured = capsys.readouterr()
         assert "not found" in captured.out
 
@@ -340,7 +336,7 @@ class TestBlackBoxExport:
             bb.record_llm_call("gpt-4o-mini", "prompt", "response", 50, 25, 300.0)
 
         sessions = BlackBox.list_sessions(db_path=tmp_db)
-        bb.replay(sessions[0].session_id)
+        bb.replay(sessions[0].session_id, db_path=tmp_db)
         captured = capsys.readouterr()
         assert "replay_agent" in captured.out
         assert "gpt-4o-mini" in captured.out
@@ -555,7 +551,7 @@ class TestReplayWithAllEvents:
             bb.record_tool_call("search", {"q": "test"}, "result", 20.0)
 
         sessions = BlackBox.list_sessions(db_path=tmp_db)
-        bb.replay(sessions[0].session_id)
+        bb.replay(sessions[0].session_id, db_path=tmp_db)
         out = capsys.readouterr().out
         assert "TOOL" in out
         assert "search" in out
@@ -566,7 +562,7 @@ class TestReplayWithAllEvents:
                 raise RuntimeError("test boom")
 
         sessions = BlackBox.list_sessions(db_path=tmp_db)
-        bb.replay(sessions[0].session_id)
+        bb.replay(sessions[0].session_id, db_path=tmp_db)
         out = capsys.readouterr().out
         assert "ERROR" in out
         assert "test boom" in out
@@ -576,7 +572,7 @@ class TestReplayWithAllEvents:
             bb.record_tool_call("broken", {}, None, 10.0, error="timeout")
 
         sessions = BlackBox.list_sessions(db_path=tmp_db)
-        bb.replay(sessions[0].session_id)
+        bb.replay(sessions[0].session_id, db_path=tmp_db)
         out = capsys.readouterr().out
         assert "broken" in out
         assert "timeout" in out
@@ -587,7 +583,7 @@ class TestReplayWithAllEvents:
             bb.record_llm_call("gpt-4o", long_text, long_text, 50, 25, 100.0)
 
         sessions = BlackBox.list_sessions(db_path=tmp_db)
-        bb.replay(sessions[0].session_id)
+        bb.replay(sessions[0].session_id, db_path=tmp_db)
         out = capsys.readouterr().out
         assert "more chars" in out
 

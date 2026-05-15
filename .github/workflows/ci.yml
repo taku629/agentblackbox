@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package and test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all,dev]"
+
+      - name: Run tests with coverage
+        run: |
+          pytest -q --cov=agentblackbox --cov-report=xml --cov-report=term
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  smoke:
+    name: smoke test (clean install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      - name: Install in clean venv
+        run: |
+          python -m venv /tmp/clean-venv
+          /tmp/clean-venv/bin/pip install dist/*.whl
+
+      - name: Import smoke test
+        run: |
+          /tmp/clean-venv/bin/python -c "
+          from agentblackbox import BlackBox, MockBlackBox, calculate_cost
+          assert calculate_cost('claude-sonnet-4-6', 1000, 500) > 0
+          with BlackBox.session('ci-smoke') as bb:
+              bb.record_llm_call(
+                  model='claude-sonnet-4-6',
+                  input_text='hi',
+                  output_text='hello',
+                  input_tokens=10,
+                  output_tokens=5,
+                  duration_ms=12.0,
+              )
+          print('smoke OK')
+          "

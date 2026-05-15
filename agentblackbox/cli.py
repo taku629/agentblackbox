@@ -19,6 +19,9 @@ def main() -> None:
         _cmd_replay(args[1:])
     elif cmd == "export":
         _cmd_export(args[1:])
+    elif cmd in ("-v", "--version", "version"):
+        from . import __version__
+        print(f"agentblackbox {__version__}")
     elif cmd in ("-h", "--help", "help"):
         _print_help()
     else:
@@ -35,6 +38,7 @@ Usage:
   agentblackbox replay <session_id> Replay a session in the console
   agentblackbox export <session_id> Export session as JSON
   agentblackbox dashboard           Launch the web dashboard (requires: pip install agentblackbox[dashboard])
+  agentblackbox --version           Print version and exit
 """)
 
 
@@ -55,34 +59,16 @@ def _cmd_replay(args: list[str]) -> None:
     if not args:
         print("Usage: agentblackbox replay <session_id>")
         sys.exit(1)
-    session_id = args[0]
     from .recorder import BlackBox
-    bb = BlackBox.__new__(BlackBox)
-    bb.session_id = session_id
-    bb.agent_name = ""
-    bb._db_path = None
-    bb._storage = None
-    bb._session = None
-    bb._token = None
-    bb._total_cost = 0.0
-    bb.replay()
+    BlackBox.replay(args[0])
 
 
 def _cmd_export(args: list[str]) -> None:
     if not args:
         print("Usage: agentblackbox export <session_id>")
         sys.exit(1)
-    session_id = args[0]
     from .recorder import BlackBox
-    bb = BlackBox.__new__(BlackBox)
-    bb.session_id = session_id
-    bb.agent_name = ""
-    bb._db_path = None
-    bb._storage = None
-    bb._session = None
-    bb._token = None
-    bb._total_cost = 0.0
-    print(bb.export_json())
+    print(BlackBox.export_json(args[0]))
 
 
 def _cmd_dashboard(args: list[str]) -> None:

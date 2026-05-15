@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.1] - 2026-05-10
+
+### Changed
+- **README rewrite**: removed unsourced "72%" claim; added a comparison table
+  against LangSmith / Langfuse / Phoenix; added "Why local-first" rationale.
+- **Cloud positioning is now honest**: marked as Coming Soon (Beta is free)
+  rather than implying a live $19/mo product. Self-hosted remote mode
+  remains documented separately.
+- Updated Anthropic model coverage in README to current 4.x family
+  (Opus 4.7, Sonnet 4.6, Haiku 4.5).
+- Test/coverage badges now reflect actual numbers (95 tests, 96% coverage).
+
+### Added
+- Real CI workflow (`.github/workflows/ci.yml`) running pytest on Python
+  3.10/3.11/3.12 plus a clean-install smoke test. README badge now points
+  to the live workflow instead of a static badge.
+- `CONTRIBUTING.md` and issue templates (bug report, feature request).
+
+### API Cleanup
+- `BlackBox.replay(session_id)` and `BlackBox.export_json(session_id)`
+  are now classmethods. The README quickstart `BlackBox.replay(sid)`
+  now actually works without conjuring a dummy instance.
+- Removed the `BlackBox.__new__(BlackBox); set fields manually` hack
+  from CLI and `examples/basic_usage.py`.
+- Existing `bb.replay(sid)` and `bb.export_json(sid)` calls still work
+  (Python lets you call classmethods through instances). Test suite
+  remains green at 95 / 95.
+
 ## [0.2.0] - 2026-05-08
 
 ### Added

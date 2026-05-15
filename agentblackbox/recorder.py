@@ -242,9 +242,10 @@ class BlackBox:
 
     # ── replay / export ───────────────────────────────────────────────────
 
-    def replay(self, session_id: Optional[str] = None) -> None:
-        sid = session_id or self.session_id
-        store = self._store()
+    @classmethod
+    def replay(cls, session_id: str, db_path: Optional[Path] = None) -> None:
+        sid = session_id
+        store = _get_storage(db_path)
         session = store.get_session(sid)
         if session is None:
             print(f"Session not found: {sid}")
@@ -297,9 +298,10 @@ class BlackBox:
                 print("  " + ev.traceback.replace("\n", "\n  ").rstrip())
         print(f"\n{'='*70}\n")
 
-    def export_json(self, session_id: Optional[str] = None) -> str:
-        sid = session_id or self.session_id
-        store = self._store()
+    @classmethod
+    def export_json(cls, session_id: str, db_path: Optional[Path] = None) -> str:
+        sid = session_id
+        store = _get_storage(db_path)
         session = store.get_session(sid)
         if session is None:
             raise ValueError(f"Session not found: {sid}")

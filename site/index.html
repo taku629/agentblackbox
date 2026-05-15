@@ -5,9 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AgentBlackBox — Flight Recorder for AI Agents</title>
   <meta name="description" content="Record every decision, tool call, and failure your AI agents make. Replay them later. Zero dependencies." />
-  <meta property="og:title" content="AgentBlackBox" />
-  <meta property="og:description" content="A flight recorder for AI agents. Record everything, replay anything." />
+  <meta property="og:title" content="AgentBlackBox — Flight Recorder for AI Agents" />
+  <meta property="og:description" content="Record every LLM call, tool call, and error. Replay the whole run later. Local SQLite. Zero dependencies. One decorator." />
   <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://taku629.github.io/agentblackbox/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AgentBlackBox — Flight Recorder for AI Agents" />
+  <meta name="twitter:description" content="Record every LLM call, tool call, and error. Replay the whole run later. Local SQLite. Zero dependencies. One decorator." />
+  <meta name="twitter:image" content="https://taku629.github.io/agentblackbox/og.png" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -270,6 +277,7 @@
     <a href="#integrations">Integrations</a>
     <a href="#cloud">Cloud</a>
     <a href="#pricing">Pricing</a>
+    <a href="#roadmap">Roadmap</a>
     <a href="https://github.com/taku629/agentblackbox">Docs</a>
   </div>
   <a href="https://github.com/taku629/agentblackbox" class="btn btn-primary">GitHub →</a>
@@ -279,7 +287,7 @@
 <section class="hero">
   <div class="badge">v0.2 — Now with Anthropic &amp; LangChain support</div>
   <h1>A <em>flight recorder</em><br/>for your AI agents.</h1>
-  <p>Record every decision, tool call, and failure. Replay them later. Zero dependencies, one decorator.</p>
+  <p>Record every LLM call, tool invocation, and error. Replay the whole run later. Local SQLite. Zero dependencies. One decorator.</p>
   <div class="hero-actions">
     <a href="#quickstart" class="btn btn-primary">Get Started Free</a>
     <a href="https://github.com/taku629/agentblackbox" class="btn btn-ghost">View on GitHub</a>
@@ -302,8 +310,8 @@
 <section id="problem">
   <div class="container">
     <div class="section-label">The Problem</div>
-    <h2>72% of AI agent projects never reach production.</h2>
-    <p class="subtitle">Not because the agents are wrong — but because they're invisible. You can't debug what you can't see.</p>
+    <h2>Your agent worked in the demo. It quietly broke in prod.</h2>
+    <p class="subtitle">When something goes wrong, the first question is always: <em>what did the agent actually do?</em> Stdout can't answer. Hosted tools want a credit card before you can see anything.</p>
     <div class="problem-grid">
       <div class="problem-card">
         <div class="icon">🔍</div>
@@ -325,6 +333,72 @@
         <h3>Framework lock-in</h3>
         <p>Existing tools (LangSmith, W&B) require you to commit to one framework. AgentBlackBox works with any.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON -->
+<section id="compare" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">How it compares</div>
+    <h2>Local-first, on purpose.</h2>
+    <p class="subtitle">LangSmith and Langfuse are excellent at what they do — hosted dashboards with polished UIs. AgentBlackBox is what you reach for <em>before</em> you commit to a platform.</p>
+    <div style="overflow-x:auto; margin-top: 2.5rem;">
+      <table style="width:100%; border-collapse: collapse; font-size: .9rem;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <th style="text-align:left; padding: .8rem .6rem; color: var(--muted); font-weight:600;"></th>
+            <th style="padding: .8rem .6rem; color: var(--accent); font-weight:700;">AgentBlackBox</th>
+            <th style="padding: .8rem .6rem; color: var(--muted); font-weight:600;">LangSmith</th>
+            <th style="padding: .8rem .6rem; color: var(--muted); font-weight:600;">Langfuse</th>
+            <th style="padding: .8rem .6rem; color: var(--muted); font-weight:600;">Phoenix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: .7rem .6rem;">5-second install (no account)</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: .7rem .6rem;">Zero core dependencies</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: .7rem .6rem;">Local-first, no cloud required</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--yellow);">self-host</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: .7rem .6rem;">Replay-as-test (MockBlackBox)</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+            <td style="text-align:center; color: var(--muted);">—</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: .7rem .6rem;">Hosted Cloud (managed)</td>
+            <td style="text-align:center; color: var(--yellow);">waitlist</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+            <td style="text-align:center; color: var(--green);">✓</td>
+          </tr>
+          <tr>
+            <td style="padding: .7rem .6rem;">License</td>
+            <td style="text-align:center; color: var(--green);">MIT</td>
+            <td style="text-align:center; color: var(--muted);">proprietary</td>
+            <td style="text-align:center; color: var(--green);">MIT</td>
+            <td style="text-align:center; color: var(--muted);">Elastic v2</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -481,13 +555,13 @@ bb.start()</pre>
 <section id="pricing" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
   <div class="container">
     <div class="section-label">Pricing</div>
-    <h2>Free forever for individuals.</h2>
-    <p class="subtitle">Open source core. Paid cloud hosting when you need it.</p>
-    <div class="pricing-grid">
+    <h2>The library is free. Forever.</h2>
+    <p class="subtitle">Open source core under MIT. A managed Cloud version is in development — Beta access is free, and the GA pricing is being co-designed with our first 50 waitlist users.</p>
+    <div class="pricing-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 720px; margin-left: auto; margin-right: auto;">
       <div class="pricing-card">
         <div class="plan-name">Open Source</div>
         <div class="plan-price">$0</div>
-        <div class="plan-desc">Self-hosted, MIT license. Forever free.</div>
+        <div class="plan-desc">Self-hosted, MIT license. Always free.</div>
         <ul class="plan-features">
           <li>Unlimited local recordings</li>
           <li>Local web dashboard</li>
@@ -498,43 +572,78 @@ bb.start()</pre>
         <a href="https://github.com/taku629/agentblackbox" class="btn btn-ghost" style="margin-top:1.5rem; width:100%; justify-content:center;">Get Started →</a>
       </div>
       <div class="pricing-card featured">
-        <div class="plan-name">Cloud <span style="background:var(--accent);color:#fff;border-radius:4px;padding:.1rem .4rem;font-size:.7rem;">Coming Soon</span></div>
-        <div class="plan-price">$19<span>/mo</span></div>
-        <div class="plan-desc">Managed cloud dashboard. No ops.</div>
+        <div class="plan-name">Cloud <span style="background:var(--accent);color:#fff;border-radius:4px;padding:.1rem .4rem;font-size:.7rem;">Beta</span></div>
+        <div class="plan-price">Free<span> during Beta</span></div>
+        <div class="plan-desc">Managed dashboard. The hosted version's pricing is co-designed with our first 50 waitlist users — your usage shapes it.</div>
         <ul class="plan-features">
           <li>Everything in Open Source</li>
-          <li>Managed cloud hosting</li>
+          <li>Hosted dashboard, no ops</li>
           <li>Team sharing</li>
-          <li>90-day retention</li>
-          <li>Slack/email alerts</li>
+          <li>Retention &amp; alerting (planned)</li>
+          <li>SSO (planned)</li>
         </ul>
-        <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox Cloud Waitlist" class="btn btn-primary" style="margin-top:1.5rem; width:100%; justify-content:center;">Join Waitlist →</a>
+        <a href="#waitlist" class="btn btn-primary" style="margin-top:1.5rem; width:100%; justify-content:center;">Join Waitlist →</a>
       </div>
-      <div class="pricing-card">
-        <div class="plan-name">Enterprise</div>
-        <div class="plan-price">Custom</div>
-        <div class="plan-desc">On-premise or dedicated cloud.</div>
-        <ul class="plan-features">
-          <li>Everything in Cloud</li>
-          <li>SSO / SAML</li>
-          <li>Unlimited retention</li>
-          <li>SLA guarantee</li>
-          <li>Dedicated support</li>
-        </ul>
-        <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox Enterprise" class="btn btn-ghost" style="margin-top:1.5rem; width:100%; justify-content:center;">Contact Us →</a>
+    </div>
+    <p style="text-align:center; color: var(--muted); font-size: .85rem; margin-top: 2rem;">
+      Need on-prem, SSO, or a dedicated SLA? <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox%20Enterprise">Get in touch</a>.
+    </p>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section id="roadmap">
+  <div class="container">
+    <div class="section-label">Roadmap</div>
+    <h2>What's coming next.</h2>
+    <p class="subtitle">Open an issue if any of these block you and I'll prioritize.</p>
+    <div class="features-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-top: 2.5rem;">
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>v0.3 — Privacy &amp; safety</h3>
+        <p>Redaction hooks for sensitive substrings (API keys, PII). Configurable retention. Optional encryption-at-rest.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔗</div>
+        <h3>v0.4 — Interop</h3>
+        <p>Optional OpenTelemetry OTLP exporter (<code>pip install agentblackbox[otel]</code>). Ship recordings to Honeycomb, Datadog, or your own OTel stack without rewriting code. LlamaIndex &amp; CrewAI auto-instrument.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧩</div>
+        <h3>v0.5 — Wider stack</h3>
+        <p>AutoGen auto-instrument. Node/TypeScript SDK with the same wire format. Versioned recording format spec.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- CTA -->
+<!-- CTA: OSS -->
 <section class="cta-section">
   <h2>Start recording your agents today.</h2>
   <p>Zero config. Zero dependencies. One pip install.</p>
   <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;">
     <a href="https://github.com/taku629/agentblackbox" class="btn btn-primary">View on GitHub →</a>
-    <a href="mailto:karisutefin73@gmail.com?subject=AgentBlackBox Cloud Waitlist" class="btn btn-ghost">Join Cloud Waitlist</a>
+    <a href="#waitlist" class="btn btn-ghost">Join Cloud Waitlist ↓</a>
   </div>
+</section>
+
+<!-- Cloud Waitlist (Tally embed) -->
+<section id="waitlist" style="background: var(--surface); border-top: 1px solid var(--border); padding: 4rem 1.5rem;">
+  <div class="container" style="max-width: 720px;">
+    <div class="section-label" style="text-align:center;">Cloud Waitlist</div>
+    <h2 style="text-align:center;">Help us co-design the Cloud version.</h2>
+    <p class="subtitle" style="text-align:center;">The hosted version is being shaped with our first 50 users — your answers below directly steer the features we build and how we price it.</p>
+    <div style="margin-top: 2rem;">
+      <!-- Tally embed: replace TALLY_FORM_ID with the actual form ID after creating the Tally form -->
+      <iframe data-tally-src="https://tally.so/embed/TALLY_FORM_ID?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1"
+              loading="lazy" width="100%" height="600" frameborder="0"
+              marginheight="0" marginwidth="0"
+              title="AgentBlackBox Cloud Waitlist"></iframe>
+    </div>
+  </div>
+  <script>
+  var d=document,w="https://tally.so/widgets/embed.js",v=function(){"undefined"!=typeof Tally?Tally.loadEmbeds():d.querySelectorAll("iframe[data-tally-src]:not([src])").forEach((function(e){e.src=e.dataset.tallySrc}))};if("undefined"!=typeof Tally)v();else if(d.querySelector('script[src="'+w+'"]')==null){var s=d.createElement("script");s.src=w,s.onload=v,s.onerror=v,d.body.appendChild(s);}
+  </script>
 </section>
 
 <footer>

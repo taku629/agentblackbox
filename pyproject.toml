@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentblackbox"
-version = "0.2.0"
+version = "0.2.1"
 description = "A flight recorder for AI agents – record every decision, tool call, and failure"
 readme = "README.md"
 license = {text = "MIT"}
@@ -35,9 +35,9 @@ dev        = ["pytest>=8", "pytest-cov>=5", "hatch"]
 agentblackbox = "agentblackbox.cli:main"
 
 [project.urls]
-Homepage   = "https://github.com/takumukata/agentblackbox"
-Repository = "https://github.com/takumukata/agentblackbox"
-Issues     = "https://github.com/takumukata/agentblackbox/issues"
+Homepage   = "https://github.com/taku629/agentblackbox"
+Repository = "https://github.com/taku629/agentblackbox"
+Issues     = "https://github.com/taku629/agentblackbox/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentblackbox"]
