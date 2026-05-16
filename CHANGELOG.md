@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.2] - 2026-05-16
+
+### Added
+- **Share links without a server.** `agentblackbox share <session_id>`
+  gzips the session and base64url-encodes it into a URL fragment, so a
+  recording can be opened in the browser viewer with no upload step
+  and no account. Override the host with `--base-url` or
+  `AGENTBLACKBOX_SHARE_BASE_URL`.
+- New static viewer at `site/view.html` — single file, renders the
+  session timeline (LLM calls, tool calls, errors, costs) directly from
+  the URL hash.
+- Vercel deployment config (`vercel.json`) so the LP and viewer ship
+  together as one static site.
+
+### Notes
+- Sessions over ~24KB encoded are auto-truncated and flagged in the
+  viewer banner; the full-fidelity story belongs in the Cloud product.
+
 ## [0.2.1] - 2026-05-10
 
 ### Changed

@@ -126,6 +126,49 @@ class TestCLIExport:
         assert len(data["llm_calls"]) == 1
 
 
+class TestCLIShare:
+    def test_share_no_args_exits(self, capsys):
+        with patch.object(sys, "argv", ["agentblackbox", "share"]):
+            with pytest.raises(SystemExit) as exc:
+                main()
+        assert exc.value.code == 1
+
+    def test_share_prints_url(self, capsys, populated_db):
+        sessions = BlackBox.list_sessions(db_path=populated_db)
+        sid = sessions[0].session_id
+
+        with patch("agentblackbox.recorder._default_storage", None):
+            from agentblackbox.storage import SQLiteStorage
+            storage = SQLiteStorage(populated_db)
+            with patch("agentblackbox.recorder._get_storage", return_value=storage):
+                with patch.object(sys, "argv", ["agentblackbox", "share", sid]):
+                    main()
+        out = capsys.readouterr().out.strip()
+        assert out.startswith("https://")
+        assert "#z=" in out
+
+    def test_share_unknown_session_exits(self, capsys):
+        with patch.object(sys, "argv", ["agentblackbox", "share", "no-such-session"]):
+            with pytest.raises(SystemExit) as exc:
+                main()
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert "Session not found" in out
+
+    def test_share_custom_base_url(self, capsys, populated_db):
+        sessions = BlackBox.list_sessions(db_path=populated_db)
+        sid = sessions[0].session_id
+
+        with patch("agentblackbox.recorder._default_storage", None):
+            from agentblackbox.storage import SQLiteStorage
+            storage = SQLiteStorage(populated_db)
+            with patch("agentblackbox.recorder._get_storage", return_value=storage):
+                with patch.object(sys, "argv", ["agentblackbox", "share", sid, "--base-url", "https://my.dev/v"]):
+                    main()
+        out = capsys.readouterr().out.strip()
+        assert out.startswith("https://my.dev/v#z=")
+
+
 class TestCLIDashboard:
     def test_dashboard_missing_deps_exits(self, capsys):
         with patch.object(sys, "argv", ["agentblackbox", "dashboard"]):

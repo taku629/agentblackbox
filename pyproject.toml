@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentblackbox"
-version = "0.2.1"
+version = "0.2.2"
 description = "A flight recorder for AI agents – record every decision, tool call, and failure"
 readme = "README.md"
 license = {text = "MIT"}

@@ -201,8 +201,29 @@ agentblackbox dashboard
 agentblackbox sessions                    # list all sessions
 agentblackbox replay <session_id>         # console replay
 agentblackbox export <session_id>         # JSON export
+agentblackbox share <session_id>          # share-link URL (no server)
 agentblackbox dashboard --port 8765       # web UI
 ```
+
+### Share links — without a server
+
+`agentblackbox share <session_id>` gzips the full session and base64-encodes
+it into the URL fragment. There is no upload step and no account — the
+recording lives in the URL itself, which means you decide who sees it just
+by deciding who gets the link.
+
+```bash
+$ agentblackbox share 7f1c…  
+https://agentblackbox.dev/view#z=H4sIAAAA…
+```
+
+Open the link in any browser to see a rendered timeline of LLM calls, tool
+calls, and errors. Override the host with `--base-url` or
+`AGENTBLACKBOX_SHARE_BASE_URL` if you self-host the viewer (the entire
+viewer is a single static HTML file in `site/view.html`).
+
+Very large sessions are auto-truncated to keep the URL under ~24KB; the
+viewer shows a banner when this happens.
 
 ---
 

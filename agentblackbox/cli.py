@@ -19,6 +19,8 @@ def main() -> None:
         _cmd_replay(args[1:])
     elif cmd == "export":
         _cmd_export(args[1:])
+    elif cmd == "share":
+        _cmd_share(args[1:])
     elif cmd in ("-v", "--version", "version"):
         from . import __version__
         print(f"agentblackbox {__version__}")
@@ -37,6 +39,7 @@ Usage:
   agentblackbox sessions            List recorded sessions
   agentblackbox replay <session_id> Replay a session in the console
   agentblackbox export <session_id> Export session as JSON
+  agentblackbox share <session_id>  Create a share-link URL (no server; data lives in the URL)
   agentblackbox dashboard           Launch the web dashboard (requires: pip install agentblackbox[dashboard])
   agentblackbox --version           Print version and exit
 """)
@@ -69,6 +72,37 @@ def _cmd_export(args: list[str]) -> None:
         sys.exit(1)
     from .recorder import BlackBox
     print(BlackBox.export_json(args[0]))
+
+
+def _cmd_share(args: list[str]) -> None:
+    if not args:
+        print("Usage: agentblackbox share <session_id> [--base-url URL]")
+        sys.exit(1)
+    import os
+    from .sharing import DEFAULT_BASE_URL, share_session
+
+    session_id = args[0]
+    base_url = os.environ.get("AGENTBLACKBOX_SHARE_BASE_URL", DEFAULT_BASE_URL)
+    i = 1
+    while i < len(args):
+        if args[i] == "--base-url" and i + 1 < len(args):
+            base_url = args[i + 1]; i += 2
+        else:
+            print(f"Unknown option: {args[i]}")
+            sys.exit(1)
+
+    try:
+        link = share_session(session_id, base_url=base_url)
+    except ValueError as exc:
+        print(str(exc))
+        sys.exit(1)
+
+    print(link.url)
+    if link.truncated:
+        print(
+            "\n  ⚠ Session truncated to fit URL. Full-fidelity sharing is on the Cloud roadmap.",
+            file=sys.stderr,
+        )
 
 
 def _cmd_dashboard(args: list[str]) -> None:

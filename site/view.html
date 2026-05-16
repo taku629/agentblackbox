@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shared session — AgentBlackBox</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --blue: #58a6ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: .02em; }
+    header .meta { margin-top: .25rem; color: var(--muted); font-size: .82rem; }
+    main { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .panel h2 { margin: 0 0 .5rem; font-size: .82rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .row { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+    .row > div { flex: 1; min-width: 180px; }
+    .row .label { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+    .row .value { margin-top: .15rem; }
+    .event {
+      padding: .75rem 1rem;
+      border-left: 3px solid var(--border);
+      margin-bottom: .5rem;
+      background: rgba(255,255,255,.02);
+    }
+    .event.llm  { border-left-color: var(--blue); }
+    .event.tool { border-left-color: var(--green); }
+    .event.err  { border-left-color: var(--red); }
+    .event .head { display: flex; gap: 1rem; font-size: .8rem; color: var(--muted); margin-bottom: .35rem; }
+    .event .head .kind { color: var(--text); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: .25rem 0 0; font-family: inherit; font-size: .82rem; color: var(--text); }
+    .pill { display: inline-block; padding: .12rem .5rem; border-radius: 999px; font-size: .72rem; background: rgba(255,255,255,.06); color: var(--muted); }
+    .pill.success { color: var(--green); }
+    .pill.error { color: var(--red); }
+    .truncated-banner {
+      background: rgba(210, 153, 34, .08);
+      border: 1px solid rgba(210, 153, 34, .3);
+      color: var(--yellow);
+      padding: .75rem 1rem;
+      border-radius: 6px;
+      font-size: .85rem;
+      margin-bottom: 1rem;
+    }
+    .truncated-banner a { color: var(--blue); text-decoration: none; }
+    .truncated-banner a:hover { text-decoration: underline; }
+    .empty { color: var(--muted); padding: 1rem; text-align: center; }
+    footer { padding: 2rem 1.5rem; color: var(--muted); font-size: .82rem; text-align: center; }
+    footer a { color: var(--blue); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔲 AgentBlackBox — shared session</h1>
+    <div class="meta">No server. The full recording is encoded in this URL.</div>
+  </header>
+  <main id="app">
+    <div class="empty">Loading…</div>
+  </main>
+  <footer>
+    Open source flight recorder for AI agents · <a href="/">agentblackbox.dev</a> · <a href="https://github.com/taku629/agentblackbox">GitHub</a>
+  </footer>
+
+  <script>
+    const app = document.getElementById("app");
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+    function fmtTime(ts) {
+      if (!ts) return "—";
+      const d = new Date(ts);
+      if (Number.isNaN(d.getTime())) return String(ts);
+      return d.toISOString().replace("T", " ").replace(/\..*/, "");
+    }
+
+    function readHash() {
+      const hash = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
+      const params = new URLSearchParams(hash.replace(/^&/, ""));
+      return params.get("z");
+    }
+
+    async function decode(encoded) {
+      const padded = encoded + "=".repeat((4 - encoded.length % 4) % 4);
+      const b64 = padded.replace(/-/g, "+").replace(/_/g, "/");
+      const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"));
+      const text = await new Response(stream).text();
+      return JSON.parse(text);
+    }
+
+    function renderError(message) {
+      app.innerHTML = `<div class="panel"><h2>Could not decode share-link</h2><pre>${escapeHtml(message)}</pre></div>`;
+    }
+
+    function renderSession(data) {
+      const s = data.session || {};
+      const llmCalls = data.llm_calls || [];
+      const toolCalls = data.tool_calls || [];
+      const errors = data.errors || [];
+
+      const events = [
+        ...llmCalls.map(c => ({ kind: "llm",  ts: c.timestamp, body: c })),
+        ...toolCalls.map(c => ({ kind: "tool", ts: c.timestamp, body: c })),
+        ...errors.map(c   => ({ kind: "err",  ts: c.timestamp, body: c })),
+      ].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+      const truncatedBanner = data.share_truncated
+        ? `<div class="truncated-banner">⚠ Session truncated to fit URL. Full-fidelity sharing is on the <a href="/#waitlist">Cloud roadmap</a>.</div>`
+        : "";
+
+      const statusClass = s.status === "success" ? "success" : s.status === "error" ? "error" : "";
+
+      app.innerHTML = `
+        ${truncatedBanner}
+        <div class="panel">
+          <h2>Session</h2>
+          <div class="row">
+            <div><div class="label">Agent</div><div class="value">${escapeHtml(s.agent_name)}</div></div>
+            <div><div class="label">Status</div><div class="value"><span class="pill ${statusClass}">${escapeHtml(s.status)}</span></div></div>
+            <div><div class="label">Cost</div><div class="value">$${Number(s.total_cost_usd || 0).toFixed(6)}</div></div>
+            <div><div class="label">Started</div><div class="value">${escapeHtml(fmtTime(s.start_time))}</div></div>
+            <div><div class="label">Ended</div><div class="value">${escapeHtml(fmtTime(s.end_time))}</div></div>
+            <div><div class="label">Session ID</div><div class="value" style="font-size:.78rem; color: var(--muted);">${escapeHtml(s.session_id)}</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Events (${events.length})</h2>
+          ${events.length === 0 ? '<div class="empty">No events.</div>' : events.map(renderEvent).join("")}
+        </div>
+      `;
+    }
+
+    function renderEvent(ev) {
+      const ts = fmtTime(ev.ts);
+      if (ev.kind === "llm") {
+        const c = ev.body;
+        return `
+          <div class="event llm">
+            <div class="head"><span class="kind">LLM</span><span>${escapeHtml(c.model || "")}</span><span>${escapeHtml(ts)}</span><span>${c.input_tokens || 0} → ${c.output_tokens || 0} tok</span><span>$${Number(c.cost_usd || 0).toFixed(6)}</span></div>
+            <pre>► ${escapeHtml(c.input_text || "")}\n◄ ${escapeHtml(c.output_text || "")}</pre>
+          </div>`;
+      }
+      if (ev.kind === "tool") {
+        const c = ev.body;
+        const err = c.error ? `<span class="pill error">error</span>` : "";
+        return `
+          <div class="event tool">
+            <div class="head"><span class="kind">TOOL</span><span>${escapeHtml(c.tool_name || "")}</span><span>${escapeHtml(ts)}</span><span>${Number(c.duration_ms || 0).toFixed(1)} ms</span>${err}</div>
+            <pre>args: ${escapeHtml(typeof c.arguments === "string" ? c.arguments : JSON.stringify(c.arguments))}\nresult: ${escapeHtml(typeof c.result === "string" ? c.result : JSON.stringify(c.result))}${c.error ? "\nerror: " + escapeHtml(c.error) : ""}</pre>
+          </div>`;
+      }
+      const c = ev.body;
+      return `
+        <div class="event err">
+          <div class="head"><span class="kind">ERROR</span><span>${escapeHtml(c.error_type || "")}</span><span>${escapeHtml(ts)}</span></div>
+          <pre>${escapeHtml(c.message || "")}\n${escapeHtml(c.traceback || "")}</pre>
+        </div>`;
+    }
+
+    async function main() {
+      const encoded = readHash();
+      if (!encoded) {
+        app.innerHTML = `<div class="panel"><h2>No session in URL</h2><p>Run <code>agentblackbox share &lt;session_id&gt;</code> to generate a share-link.</p></div>`;
+        return;
+      }
+      try {
+        const data = await decode(encoded);
+        renderSession(data);
+      } catch (e) {
+        renderError(e.message || String(e));
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
