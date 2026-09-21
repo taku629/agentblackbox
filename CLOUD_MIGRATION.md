@@ -60,28 +60,37 @@ python3 -m venv .venv && .venv/bin/pip install kaggle nbformat
 .venv/bin/kaggle kernels push -p notebooks
 
 # IMPORTANT for cloud: sessions suspend when idle, so a long-sleep watcher
-# is unreliable. Prefer one-shot submission after the daily reset (~00:00 UTC):
-cd arc-agi-3 && .venv/bin/python submit_now.py 15   # kernel_version arg
+# is unreliable. Prefer one-shot, idempotent submission:
+cd arc-agi-3 && .venv/bin/python submit_best.py            # one decision, exits
+cd arc-agi-3 && .venv/bin/python submit_best.py --dry-run  # print decision only
+cd arc-agi-3 && .venv/bin/python push_hybrid_if_missing.py # push anim-hybrid if a slot is free
 
-# local-machine alternative: sleep-until-slot watcher (fine on an always-on box)
-nohup .venv/bin/python watch_and_submit.py >> watch_submit.log 2>&1 &
+# submit_best.py checks the competition's own numAllowedNow counter, so it is
+# safe to run repeatedly. Policy: a verified mean >= 5.5 submits immediately;
+# >= 4.0 submits after 22:00 UTC; Forge fallback goes out after 23:30 UTC.
+
+# local-machine alternative: retry loop (fine on an always-on box)
+nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 
 # poll a submission ref until it leaves PENDING
 ./poll_sub.sh <ref>   # run in bg
 ```
 
-## Current state (2026-09-21, evening)
+## Current state (2026-09-21, morning UTC)
 
-- AGI-3 today: OCEAN v14 submitted (ref `56408885`, PENDING — scored 0.14
-  on the previous version)
-- AGI-2 today: DSL v1 submitted (ref `56414919`; ~33.9 expected, top 0.5%)
+- AGI-3 today: OCEAN v13 submitted 00:14 UTC (ref `56408885`, scored 0.14) —
+  a stale `watch_and_submit.py`-style run burned the daily slot. Both old
+  watcher scripts now delegate to `submit_best.py --watch`; kill any unsynced
+  local copy so it cannot win the slot race tomorrow.
+- AGI-2 today: DSL v1 submitted (ref `56414919`, PENDING; ~33.9 expected)
 - Best verified AGI-3 candidate: `arc3-duck-qwen3-8-27b`, public mean 4.79
-- Queued for RTX6000: `arc3-duck-qwen3-8-flash-next-nvfp4-mtp`,
-  `arc3-duck-flash-next-nvfp4-mtp-b`; `arc3-duck-anim-flashnext` pushes when
-  a slot frees (`push_hybrid_when_free.py`)
-- Score-aware watcher `arc-agi-3/watch_submit2.py`: wakes ~00:20 UTC,
-  fetches each completed candidate's `summary.txt`, submits the highest
-  verified mean (>= 4.0); Forge is late fallback. Uses `kernel_versions.json`.
+- Queued for RTX6000 (batch GPU limit is 2, both taken):
+  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp`, `arc3-duck-flash-next-nvfp4-mtp-b`
+- `arc3-duck-anim-flashnext` push used to fail on a title/slug mismatch
+  (409 Conflict); title fixed to slugify correctly, now blocked only by the
+  GPU session limit — `push_hybrid_if_missing.py` retries it.
+- Devin automation (pending approval) fires ~5x/day UTC to run
+  `push_hybrid_if_missing.py` + `submit_best.py`.
 - T4 Qwen route (14B/32B AWQ) is dead — 28-way eval concurrency starves
   inference, every request read-times-out -> 0.00. Do not resubmit T4.
 - Hidden rerun keeps per-game cap 7920s (~110 games in 4 waves fit 9h).
@@ -89,8 +98,9 @@ nohup .venv/bin/python watch_and_submit.py >> watch_submit.log 2>&1 &
 
 ## Note
 
-`run_local.py`, `watch_submit2.py`, `push_hybrid_when_free.py` resolve paths
-via `AGI3_HOME` / `KAGGLE_HOME` env vars (default `~/kaggle/...`) — clone
-anywhere and set the vars, or mirror the `~/kaggle` layout.
-Cloud sessions suspend when idle: prefer one-shot `submit_now.py`-style runs
-timed near the 00:20 UTC window over long-sleep watchers.
+`run_local.py` resolves paths via `AGI3_HOME` / `KAGGLE_HOME` env vars
+(default `~/kaggle/...`) — clone anywhere and set the vars, or mirror the
+`~/kaggle` layout. `submit_best.py` / `push_hybrid_if_missing.py` resolve
+everything relative to the repo checkout, so they work from any clone.
+Cloud sessions suspend when idle: prefer one-shot `submit_best.py` runs
+(or the scheduled Devin automation) over long-sleep watchers.
