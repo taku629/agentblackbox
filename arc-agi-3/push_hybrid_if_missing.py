@@ -18,13 +18,18 @@ SLUG = "takumuhata/arc3-duck-anim-flashnext"
 
 KAGGLE = [sys.executable, "-m", "kaggle"]
 
-st = subprocess.run(KAGGLE + ["kernels", "status", SLUG],
-                    capture_output=True, text=True, timeout=120)
-if st.returncode == 0:
-    print(f"{SLUG} already exists: {st.stdout.strip()[-120:]}")
-    sys.exit(0)
 
-print(f"{SLUG} missing -> pushing {HYBRID_DIR}")
-r = subprocess.run(KAGGLE + ["kernels", "push", "-p", str(HYBRID_DIR)],
-                   capture_output=True, text=True, timeout=300)
-print((r.stdout + r.stderr).strip()[-600:])
+def main():
+    st = subprocess.run(KAGGLE + ["kernels", "status", SLUG],
+                        capture_output=True, text=True, timeout=120)
+    if st.returncode == 0:
+        print(f"{SLUG} already exists: {st.stdout.strip()[-120:]}")
+        return
+    print(f"{SLUG} missing -> pushing {HYBRID_DIR}")
+    r = subprocess.run(KAGGLE + ["kernels", "push", "-p", str(HYBRID_DIR)],
+                       capture_output=True, text=True, timeout=300)
+    print((r.stdout + r.stderr).strip()[-600:])
+
+
+if __name__ == "__main__":
+    main()
