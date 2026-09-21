@@ -44,15 +44,18 @@ VERMAP_FILE = HERE / "kernel_versions.json"
 CANDIDATES = [
     ("takumuhata/arc3-duck-anim-flashnext", None,
      "TAAF anim-aware solver + Qwen3.8 Flash-Next NVFP4 MTP (hybrid)"),
+    ("takumuhata/arc3-duck-qwen-27b-patched", None,
+     "TAAF duck + Qwen3.8-27B-FP8 + capped-output solver patch"),
     ("takumuhata/arc3-duck-qwen3-8-flash-next-nvfp4-mtp", None,
      "Duck Qwen3.8 Flash-Next NVFP4 MTP tuned (public25 profile)"),
-    ("takumuhata/arc3-duck-flash-next-nvfp4-mtp-b", None,
-     "Duck Qwen3.8 Flash-Next NVFP4 MTP tuned B"),
-    ("takumuhata/arc3-duck-qwen3-8-27b", 1,
+    ("takumuhata/arc3-duck-qwen3-8-27b", None,
      "TAAF duck + Qwen3.6-27B-FP8 on RTX6000 (public eval mean 4.79)"),
 ]
-# Already-measured means (avoids re-downloading kernel output).
-KNOWN_MEAN = {"takumuhata/arc3-duck-qwen3-8-27b": 4.79}
+# Already-measured means (avoids re-downloading kernel output). Entries here
+# short-circuit the fetch — only pin a mean when the live output is NOT what
+# should be submitted (e.g. an archived version). Otherwise leave the slug out
+# so verified_mean() reads the freshest completed run's own summary/score.json.
+KNOWN_MEAN = {}
 STRONG_MEAN = 5.5   # submit early only if a candidate clearly beats 27B (4.79)
 MIN_MEAN = 4.0      # late in the day accept anything >= this
 LATE_HHMM = (22, 0)   # UTC: after this, best verified >= MIN_MEAN goes out
@@ -122,26 +125,41 @@ def mapped_version(slug):
         return None
 
 
+def _mean_from_score_json(path):
+    """Mean of per-game 'score' values in a score.json-shaped file."""
+    try:
+        games = json.loads(Path(path).read_text(errors="replace")).get("games")
+        vals = [float(g["score"]) for g in games.values() if "score" in g]
+        return sum(vals) / len(vals) if vals else None
+    except Exception:
+        return None
+
+
 def verified_mean(slug):
-    """Fetch the kernel's summary.txt and parse 'mean score'. None on failure."""
+    """Fetch the kernel's score summary (summary.txt or score.json) and parse
+    the mean public-eval score. None on failure."""
     if slug in KNOWN_MEAN:
         return KNOWN_MEAN[slug]
     try:
         with tempfile.TemporaryDirectory() as td:
-            files, _ = api.kernels_output(slug, td, file_pattern="summary.txt")
-            for f in files or []:
-                p = Path(td) / f
-                if p.exists():
-                    m = re.search(r"mean score:\s*([0-9.]+)",
-                                  p.read_text(errors="replace"))
-                    if m:
-                        return float(m.group(1))
-            # fall back to scanning whatever landed
+            try:
+                api.kernels_output(slug, td, file_pattern="summary.txt")
+            except Exception:
+                pass
+            if not list(Path(td).rglob("summary.txt")):
+                try:
+                    api.kernels_output(slug, td, file_pattern="score.json")
+                except Exception:
+                    pass
             for p in Path(td).rglob("*.txt"):
                 m = re.search(r"mean score:\s*([0-9.]+)",
                               p.read_text(errors="replace"))
                 if m:
                     return float(m.group(1))
+            for p in Path(td).rglob("score.json"):
+                mean = _mean_from_score_json(p)
+                if mean is not None:
+                    return mean
     except Exception as e:
         log(f"{slug}: mean fetch failed {str(e)[:120]}")
     return None

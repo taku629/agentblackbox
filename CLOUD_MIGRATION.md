@@ -83,7 +83,8 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   watcher scripts now delegate to `submit_best.py --watch`; kill any unsynced
   local copy so it cannot win the slot race tomorrow.
 - AGI-2 today: DSL v1 submitted (ref `56414919`, PENDING; ~33.9 expected)
-- Best verified AGI-3 candidate: `arc3-duck-qwen3-8-27b`, public mean 4.79
+- Best verified AGI-3 candidates: `arc3-duck-qwen3-8-27b` public mean 4.79;
+  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` public mean 4.63
 - OceanCore local baseline (`run_local.py all 3000`, 25 dev games): mean 0.15%
   — matches the 0.14 LB score. Fallback-only; do not rely on it for placement.
 - Queued for RTX6000 (batch GPU limit is 2, both taken):
@@ -100,6 +101,13 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
     nudge-to-emit retry, and progressive history shrinking after ≥2
     consecutive request failures. `bundle_hybrid/` and `taaf_src/` in this
     repo were synced to the deployed patched file (was previously stale).
+- Twin result (COMPLETE ~18:40 UTC): **public mean 4.63** vs 27B's 4.79 —
+  roughly a wash, but on a different per-game draw: 121 turns/game avg
+  (~2.4x the 27B's ~50), 595 tokens/turn. Wins: lp85 1.82→25.04,
+  vc33 8.99→17.88, re86 6.83→16.67. Regressions to zero: r11l, cd82, cn04,
+  dc22, sb26 (was 27.78!). Faster turns buy breadth, not depth.
+- NOTE: flash-next kernels write `score.json` (games.*.score), not
+  `summary.txt` — `submit_best.py`'s verified_mean() handles both now.
 - 27B transcript findings (re-downloaded to `~/kout/duck27b`, 129MB):
   only ~50 turns/game at ~144 s/turn under 25-way concurrency; losing games
   correlate with long deliberation (ka59: ~84k thinking tokens over 35 turns,
