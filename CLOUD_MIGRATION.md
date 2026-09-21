@@ -132,3 +132,17 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 everything relative to the repo checkout, so they work from any clone.
 Cloud sessions suspend when idle: prefer one-shot `submit_best.py` runs
 (or the scheduled Devin automation) over long-sleep watchers.
+
+## Analysis notes (2026-09-21 evening UTC)
+
+- Twin (NVFP4 baseline solver) per-turn stats: mean 595 tok/turn, p90 ~1.7k,
+  2747/3020 turns <2k. Long-thinking pathology is a *tail* on flash-next
+  (8 turns >16k, max 31k ≈ ~40min each at ~9 tok/s effective) — the
+  MAX_OUTPUT=6144 cap's value there is bounding the worst case, not the median.
+  On the 27B the pathology was the median (multi-k thinking every turn), so the
+  `arc3-duck-qwen-27b-patched` candidate is the real cap test.
+- Twin's vLLM watchdog: 0 restarts over the run — serving is stable.
+- Ready-to-push candidate waiting for a GPU slot:
+  `submit_ag3_duck_patched/` -> `takumuhata/arc3-duck-qwen-27b-patched`,
+  dataset `takumuhata/taaf-27b-patched-bundle` (jakobbrggen bundle + patched
+  tool_agent.py). `push_hybrid_if_missing.py` pushes it on the next free slot.
