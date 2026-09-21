@@ -82,7 +82,7 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   a stale `watch_and_submit.py`-style run burned the daily slot. Both old
   watcher scripts now delegate to `submit_best.py --watch`; kill any unsynced
   local copy so it cannot win the slot race tomorrow.
-- AGI-2 today: DSL v1 submitted (ref `56414919`, PENDING; ~33.9 expected)
+- AGI-2 today: DSL v1 submitted (ref `56414919`) — COMPLETE, **public 29.72**
 - Best verified AGI-3 candidates: `arc3-duck-qwen3-8-27b` public mean 4.79;
   `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` public mean 4.63
 - OceanCore local baseline (`run_local.py all 3000`, 25 dev games): mean 0.15%
