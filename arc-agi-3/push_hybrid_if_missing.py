@@ -7,6 +7,7 @@ normal retry-later outcome, so this is safe to run on a schedule.
 
 Usage: .venv/bin/python push_hybrid_if_missing.py
 """
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,10 @@ REPO = HERE.parent
 # GPU slot, so earlier entries win when only one slot is free.
 KERNELS = [
     ("takumuhata/arc3-duck-anim-flashnext", REPO / "submit_ag3_hybrid"),
-    ("takumuhata/arc3-duck-qwen-27b-patched", REPO / "submit_ag3_duck_patched"),
+    # NOTE: the patched-27B agent runs as v2 on the existing
+    # takumuhata/arc3-duck-qwen3-8-27b kernel (dataset repoint in
+    # submit_ag3_duck) -- no separate -patched kernel, to avoid spending
+    # a batch-GPU slot on a duplicate experiment.
 ]
 
 KAGGLE = [sys.executable, "-m", "kaggle"]
@@ -40,5 +44,15 @@ def main():
         print((r.stdout + r.stderr).strip()[-600:])
 
 
+def _push_pending():
+    """Process the pending kernel-version push queue (see push_pending.py)."""
+    pending = HERE / "pending_pushes.json"
+    if not pending.is_file() or not json.loads(pending.read_text() or "{}"):
+        return
+    subprocess.run([sys.executable, str(HERE / "push_pending.py")],
+                   capture_output=False, timeout=600)
+
+
 if __name__ == "__main__":
     main()
+    _push_pending()

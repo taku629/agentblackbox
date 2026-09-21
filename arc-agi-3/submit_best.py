@@ -44,18 +44,20 @@ VERMAP_FILE = HERE / "kernel_versions.json"
 CANDIDATES = [
     ("takumuhata/arc3-duck-anim-flashnext", None,
      "TAAF anim-aware solver + Qwen3.8 Flash-Next NVFP4 MTP (hybrid)"),
-    ("takumuhata/arc3-duck-qwen-27b-patched", None,
-     "TAAF duck + Qwen3.8-27B-FP8 + capped-output solver patch"),
     ("takumuhata/arc3-duck-qwen3-8-flash-next-nvfp4-mtp", None,
      "Duck Qwen3.8 Flash-Next NVFP4 MTP tuned (public25 profile)"),
-    ("takumuhata/arc3-duck-qwen3-8-27b", None,
-     "TAAF duck + Qwen3.6-27B-FP8 on RTX6000 (public eval mean 4.79)"),
+    ("takumuhata/arc3-duck-qwen3-8-27b", 2,
+     "TAAF duck + Qwen3.6-27B-FP8 + capped-output solver patch"),
 ]
 # Already-measured means (avoids re-downloading kernel output). Entries here
 # short-circuit the fetch — only pin a mean when the live output is NOT what
 # should be submitted (e.g. an archived version). Otherwise leave the slug out
 # so verified_mean() reads the freshest completed run's own summary/score.json.
-KNOWN_MEAN = {}
+# Exception: a slug mid-upgrade (new version QUEUED/RUNNING) serves an empty
+# output tree, hiding the completed run -- pin that run's measured mean here.
+KNOWN_MEAN = {
+    "takumuhata/arc3-duck-qwen3-8-27b": 4.79,  # v1 run; v2 (patched agent) in flight
+}
 STRONG_MEAN = 5.5   # submit early only if a candidate clearly beats 27B (4.79)
 MIN_MEAN = 4.0      # late in the day accept anything >= this
 LATE_HHMM = (22, 0)   # UTC: after this, best verified >= MIN_MEAN goes out
