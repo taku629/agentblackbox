@@ -5,8 +5,9 @@ Usage: .venv312/bin/python run_local.py ls20 [max_actions] [seed]
 """
 import json, sys, logging, importlib
 from pathlib import Path
-sys.path.insert(0, "/home/takumu/kaggle/arc-agi-3/ARC-AGI-3-Agents")
-sys.path.insert(0, "/home/takumu/kaggle/arc-agi-3")
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE/"ARC-AGI-3-Agents"))
+sys.path.insert(0, str(HERE))
 from arc_agi.local_wrapper import LocalEnvironmentWrapper
 from arc_agi.models import EnvironmentInfo
 from arcengine import GameAction
@@ -17,7 +18,7 @@ import agent_core
 importlib.reload(agent_core)
 from agent_core import OceanCore
 
-BASE = Path("/home/takumu/kaggle/arc-agi-3/environment_files")
+BASE = HERE/"environment_files"
 
 
 def load(game, seed=0):

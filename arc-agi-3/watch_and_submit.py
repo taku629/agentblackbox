@@ -3,10 +3,11 @@
 Logs to watch_submit.log."""
 import sys, time, logging
 from datetime import datetime, timezone, timedelta
-sys.path.insert(0, "/home/takumu/kaggle/arc-agi-3")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kaggle.api.kaggle_api_extended import KaggleApi
 
-logging.basicConfig(filename="/home/takumu/kaggle/arc-agi-3/watch_submit.log",
+logging.basicConfig(filename=str(Path(__file__).resolve().parent/"watch_submit.log"),
                     level=logging.INFO, format="%(asctime)s %(message)s",
                     force=True)
 api = KaggleApi(); api.authenticate()

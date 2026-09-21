@@ -7,7 +7,7 @@ from arcengine import GameAction
 
 logging.basicConfig(level=logging.WARNING)
 
-BASE = Path("/home/takumu/kaggle/arc-agi-3/environment_files")
+BASE = Path(__file__).resolve().parent/"environment_files"
 
 def load_env(game_prefix: str, seed: int = 0):
     gdir = BASE / game_prefix

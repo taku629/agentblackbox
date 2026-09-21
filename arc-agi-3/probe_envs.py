@@ -1,13 +1,13 @@
 import json, sys, logging
 from pathlib import Path
-sys.path.insert(0, "/home/takumu/kaggle/arc-agi-3/ARC-AGI-3-Agents")
+sys.path.insert(0, str(Path(__file__).resolve().parent/"ARC-AGI-3-Agents"))
 from arc_agi.local_wrapper import LocalEnvironmentWrapper
 from arc_agi.models import EnvironmentInfo
 from arcengine import GameAction
 logging.disable(logging.CRITICAL)
 import numpy as np
 
-BASE = Path("/home/takumu/kaggle/arc-agi-3/environment_files")
+BASE = Path(__file__).resolve().parent/"environment_files"
 for gdir in sorted(BASE.iterdir()):
     sub = next(gdir.iterdir())
     meta = json.loads((sub / "metadata.json").read_text())

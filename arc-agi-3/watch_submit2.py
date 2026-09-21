@@ -21,10 +21,11 @@ import time
 import logging
 from datetime import datetime, timezone, timedelta
 
-sys.path.insert(0, "/home/takumu/kaggle/arc-agi-3")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kaggle.api.kaggle_api_extended import KaggleApi
 
-logging.basicConfig(filename="/home/takumu/kaggle/arc-agi-3/watch_submit2.log",
+logging.basicConfig(filename=str(Path(__file__).resolve().parent/"watch_submit2.log"),
                     level=logging.INFO, format="%(asctime)s %(message)s",
                     force=True)
 api = KaggleApi()
@@ -33,7 +34,7 @@ api.authenticate()
 WAKE_HHMM = (0, 20)
 RETRY_S = 900
 ATTEMPTS = 32
-VERMAP_FILE = "/home/takumu/kaggle/arc-agi-3/kernel_versions.json"
+VERMAP_FILE = str(Path(__file__).resolve().parent/"kernel_versions.json")
 
 # (kernel slug, kernel_version or None->latest, message). Ordered by
 # preference when scores tie; highest verified mean wins overall.

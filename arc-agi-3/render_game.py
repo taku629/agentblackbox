@@ -1,6 +1,6 @@
 import json, sys, logging
 from pathlib import Path
-sys.path.insert(0, "/home/takumu/kaggle/arc-agi-3/ARC-AGI-3-Agents")
+sys.path.insert(0, str(Path(__file__).resolve().parent/"ARC-AGI-3-Agents"))
 from arc_agi.local_wrapper import LocalEnvironmentWrapper
 from arc_agi.models import EnvironmentInfo
 from arcengine import GameAction
@@ -14,7 +14,7 @@ PALETTE = np.array([
     [80,80,80],[166,101,41],[3,161,99],[199,168,11]
 ], dtype=np.uint8)
 
-BASE = Path("/home/takumu/kaggle/arc-agi-3/environment_files")
+BASE = Path(__file__).resolve().parent/"environment_files"
 
 def load(game, seed=0):
     sub = next((BASE/game).iterdir())
@@ -30,14 +30,14 @@ def save_png(arr, path):
 
 if __name__ == "__main__":
     import os
-    os.makedirs("/home/takumu/kaggle/arc-agi-3/frames", exist_ok=True)
+    os.makedirs(Path(__file__).resolve().parent/"frames", exist_ok=True)
     game = sys.argv[1]
     actions = [GameAction.from_id(int(x)) for x in sys.argv[2].split(",")] if len(sys.argv)>2 else [GameAction.RESET]
     env = load(game)
     raw = env.step(GameAction.RESET)
-    save_png(np.asarray(raw.frame[0]), f"/home/takumu/kaggle/arc-agi-3/frames/{game}_0.png")
+    save_png(np.asarray(raw.frame[0]), f"{Path(__file__).resolve().parent}/frames/{game}_0.png")
     for i,a in enumerate(actions,1):
         raw = env.step(a)
         if raw and raw.frame:
-            save_png(np.asarray(raw.frame[0]), f"/home/takumu/kaggle/arc-agi-3/frames/{game}_{i}.png")
+            save_png(np.asarray(raw.frame[0]), f"{Path(__file__).resolve().parent}/frames/{game}_{i}.png")
             print(i, a.name, raw.state, "levels:", raw.levels_completed)

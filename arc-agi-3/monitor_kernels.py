@@ -3,7 +3,8 @@ monitor_kernels.log. Runs up to 24h."""
 import subprocess, time, logging
 from datetime import datetime
 
-logging.basicConfig(filename="/home/takumu/kaggle/arc-agi-3/monitor_kernels.log",
+from pathlib import Path
+logging.basicConfig(filename=str(Path(__file__).resolve().parent/"monitor_kernels.log"),
                     level=logging.INFO, format="%(asctime)s %(message)s",
                     force=True)
 KERNELS = [

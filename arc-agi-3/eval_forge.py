@@ -1,6 +1,7 @@
 """Evaluate Forge (frame-only mode) across all local games, mirroring hidden-eval conditions."""
 import sys, importlib.util, logging, time, traceback
-sys.path.insert(0, "/home/takumu/kaggle/ARC-AGI-3-Kaggle-Starter/vendor/ARC-AGI-3-Agents")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent/"ARC-AGI-3-Agents"))
 import arc_agi
 from arc_agi import OperationMode
 
@@ -8,7 +9,7 @@ MAX_STEPS = int(sys.argv[1]) if len(sys.argv) > 1 else 500
 GAMES = sys.argv[2].split(",") if len(sys.argv) > 2 else None
 
 logging.basicConfig(level=logging.ERROR)
-spec = importlib.util.spec_from_file_location("forge", "/home/takumu/kaggle/arc-agi-3/forge_agent_evalmode.py")
+spec = importlib.util.spec_from_file_location("forge", str(Path(__file__).resolve().parent/"forge_agent_evalmode.py"))
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 Cls = mod.MyAgent
