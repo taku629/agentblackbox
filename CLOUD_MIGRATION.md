@@ -92,6 +92,20 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   slot — the anim-hybrid (different solver variant) now evaluates instead of a
   redundant copy. Re-push it from a directory whose metadata carries that id if
   ever needed again.
+- The two queued kernels are a real A/B, not duplicates:
+  - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched,
+    `LOCAL_ANALYZER_MAX_OUTPUT=0` (uncapped thinking+output)
+  - anim-flashnext uses `takumuhata/taaf-anim-flashnext-bundle`: patched
+    `tool_agent.py` — MAX_OUTPUT default 6144, a `finish_reason=="length"`
+    nudge-to-emit retry, and progressive history shrinking after ≥2
+    consecutive request failures. `bundle_hybrid/` and `taaf_src/` in this
+    repo were synced to the deployed patched file (was previously stale).
+- 27B transcript findings (re-downloaded to `~/kout/duck27b`, 129MB):
+  only ~50 turns/game at ~144 s/turn under 25-way concurrency; losing games
+  correlate with long deliberation (ka59: ~84k thinking tokens over 35 turns,
+  single blocks up to ~10k tokens) vs winning games with many short turns
+  (sb26: 77 turns, max block ~3k tokens). Timeouts were symptomatic (1–5 per
+  game), not the root cause — throughput per turn is.
 - `arc3-duck-anim-flashnext` push used to fail on a title/slug mismatch
   (409 Conflict); title fixed to slugify correctly — `push_hybrid_if_missing.py`
   pushes it whenever it is missing and a GPU slot is free.

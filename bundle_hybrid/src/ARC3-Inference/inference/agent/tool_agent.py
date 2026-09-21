@@ -145,7 +145,10 @@ def _get_env_float(name: str, default: float) -> float:
         return default
 
 
-_LOCAL_ANALYZER_MAX_OUTPUT = _get_env_int("LOCAL_ANALYZER_MAX_OUTPUT", 0)
+# Cap worst-case generation length so a runaway thinking turn returns a
+# truncated response (~680s at ~9 tok/s) instead of dying on the request
+# timeout with zero output; the length-truncated path below salvages it.
+_LOCAL_ANALYZER_MAX_OUTPUT = _get_env_int("LOCAL_ANALYZER_MAX_OUTPUT", 6144)
 _LOCAL_ANALYZER_CONTEXT_WINDOW = _get_env_int("LOCAL_ANALYZER_CONTEXT_WINDOW", 32768)
 _LOCAL_ANALYZER_TIMEOUT = _get_env_float("LOCAL_ANALYZER_TIMEOUT", 0.0)
 _LOCAL_ANALYZER_TOOL_STEPS = _get_env_int("LOCAL_ANALYZER_TOOL_STEPS", 12)
@@ -171,6 +174,12 @@ _HARD_NOOP_GUARD_ENABLED = _get_env_bool("ARC3_HARD_NOOP_GUARD", True)
 # deliberately *not* gated: it is a bug fix, not part of the experiment arm.
 _ANIMATION_AWARENESS_ENABLED = _get_env_bool("ARC3_ANIMATION_AWARENESS", True)
 _PERSISTENT_HISTORY_ASSISTANT_TURNS = 30
+# After this many consecutive request failures (timeouts, conn errors) on a
+# turn, progressively shrink persistent history before each retry so the
+# retried request is smaller and more likely to finish inside the remaining
+# per-game budget. 0 disables. Without this a stalled server or oversized
+# context retries the identical request until the game budget is gone.
+_RETRY_SHRINK_AFTER_FAILURES = _get_env_int("LOCAL_ANALYZER_RETRY_SHRINK", 2)
 _RESPONSE_META_MAX_CHARS = 4000
 
 _PYTHON_TOOL_DESCRIPTION = (
@@ -1106,6 +1115,7 @@ class ToolAgent:
         self._last_step_summary: dict[str, Any] | None = None
         self._last_action_result: dict[str, Any] | None = None
         self._summarized_knowledge = _empty_world_model()
+        self._consecutive_request_failures = 0
         # Explicit ctor arg (e.g. from a pickled HarnessSolver deployed to
         # Kaggle) takes precedence over the local process environment, so the
         # flag state chosen at deploy time survives the trip into the kernel.
@@ -2204,6 +2214,7 @@ class ToolAgent:
                             request_index_within_turn=latest_request_index,
                         )
                     result = self._chat_completion(messages, **request_kwargs)
+                    self._consecutive_request_failures = 0
                     self._accumulate_usage_tokens(result.usage)
                     if self._save_request_logs:
                         _append_request_snapshot(
@@ -2288,17 +2299,30 @@ class ToolAgent:
                     yielded_control_reason = control_yield_reason()
                     if yielded_control_reason is not None:
                         break
-                    followup_prefix = "You have not acted yet. Investigate first. "
-                    if tool_call_markup_in_text:
-                        followup_prefix = (
-                            "You did not call a tool. We detected `<tool_call>` markup inside your reasoning or assistant text, "
-                            "so no parsed tool call was executed. On this retry, do not add a note or explanation first. "
-                            "Emit exactly one `python` tool call directly as your next response. "
-                            "Do not place `<tool_call>` markup inside reasoning, explanation, or notes. "
+                    if result.finish_reason == "length":
+                        append_transcript(
+                            "ANALYZER STATUS",
+                            "length_truncated: response cut at token limit before a tool call; nudging to emit now.",
                         )
-                    followup_prompt = (
-                        f"{followup_prefix}"
-                        "Then investigate and revise your working world model of what the level contains, what actions appear to do, what the current goal seems to be, and what plan looks best. "
+                        followup_prompt = (
+                            "Your previous reply was cut off by the output token limit before a tool call was emitted. "
+                            "Your reasoning above is preserved -- do not restart or repeat the analysis. "
+                            "Emit exactly one `python` tool call now that runs your current best probe or action batch "
+                            "(keep any leading note to one line). "
+                            f"{TOOL_CALL_FORMAT_GUIDANCE}"
+                        )
+                    else:
+                        followup_prefix = "You have not acted yet. Investigate first. "
+                        if tool_call_markup_in_text:
+                            followup_prefix = (
+                                "You did not call a tool. We detected `<tool_call>` markup inside your reasoning or assistant text, "
+                                "so no parsed tool call was executed. On this retry, do not add a note or explanation first. "
+                                "Emit exactly one `python` tool call directly as your next response. "
+                                "Do not place `<tool_call>` markup inside reasoning, explanation, or notes. "
+                            )
+                        followup_prompt = (
+                            f"{followup_prefix}"
+                            "Then investigate and revise your working world model of what the level contains, what actions appear to do, what the current goal seems to be, and what plan looks best. "
                         "If helpful, include short world-model update lines such as `World model:`, `Goal model:`, `Action model:`, `Recent findings:`, `Open questions:`, `Plan:`, or `Cross-level notes:`. "
                         "Call the `python` tool with code that inspects `current_frame`, `previous_frame`, `last_transition`, `history`, or `valid_actions` -- use `current_frame.segmentation` as the primary view, and `.ascii` only for a small specific region -- "
                         "compare `previous_frame` to `current_frame` for the most recent change, "
@@ -2363,6 +2387,28 @@ class ToolAgent:
         except requests.RequestException as exc:
             append_transcript("ANALYZER STATUS", f"request_error: {exc}")
             preserve_history = False
+            self._consecutive_request_failures += 1
+            if (
+                _RETRY_SHRINK_AFTER_FAILURES > 0
+                and self._consecutive_request_failures >= _RETRY_SHRINK_AFTER_FAILURES
+            ):
+                keep_turns = max(
+                    2,
+                    _PERSISTENT_HISTORY_ASSISTANT_TURNS
+                    - self._consecutive_request_failures * 6,
+                )
+                shrunk = self._drop_until_first_user_message(
+                    self._keep_recent_history_turns(
+                        previous_history_messages, max_turns=keep_turns
+                    )
+                )
+                if len(shrunk) < len(previous_history_messages):
+                    previous_history_messages = shrunk
+                    append_transcript(
+                        "ANALYZER STATUS",
+                        f"request_retry_shrink: kept ~{keep_turns} assistant "
+                        "turns so the retried request is smaller.",
+                    )
             if latest_request_messages is not None:
                 _write_prompt_log_snapshot(
                     prompt_log,
