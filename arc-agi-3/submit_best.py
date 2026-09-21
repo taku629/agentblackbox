@@ -49,12 +49,10 @@ CANDIDATES = [
     ("takumuhata/arc3-duck-qwen3-8-27b", 2,
      "TAAF duck + Qwen3.6-27B-FP8 + capped-output solver patch"),
 ]
-# Already-measured means (avoids re-downloading kernel output). Entries here
-# short-circuit the fetch — only pin a mean when the live output is NOT what
-# should be submitted (e.g. an archived version). Otherwise leave the slug out
-# so verified_mean() reads the freshest completed run's own summary/score.json.
-# Exception: a slug mid-upgrade (new version QUEUED/RUNNING) serves an empty
-# output tree, hiding the completed run -- pin that run's measured mean here.
+# Already-measured means (avoids re-downloading kernel output). Consulted
+# ONLY when the live download yields nothing -- e.g. a newer kernel version is
+# QUEUED/RUNNING so kernels_output serves that empty tree, hiding the last
+# completed run. A fresh completed run's own summary/score.json always wins.
 KNOWN_MEAN = {
     "takumuhata/arc3-duck-qwen3-8-27b": 4.79,  # v1 run; v2 (patched agent) in flight
 }
@@ -108,14 +106,18 @@ def allowed_now(competition):
         return None
 
 
-def kernel_complete(slug):
+def kernel_status(slug):
     try:
         st = api.kernels_status(slug)
-        status = getattr(st, "status", None) or str(st)
-        return "COMPLETE" in str(status)
+        return getattr(st, "status", None) or str(st)
     except Exception as e:
         log(f"{slug}: status failed {str(e)[:120]}")
-        return False
+        return None
+
+
+def kernel_complete(slug):
+    status = kernel_status(slug)
+    return status is not None and "COMPLETE" in str(status)
 
 
 def mapped_version(slug):
@@ -169,9 +171,8 @@ def verified_mean(slug):
                     return mean
     except Exception as e:
         log(f"{slug}: mean fetch failed {str(e)[:120]}")
-    # Fallback only when the live output is unreadable -- e.g. a newer
-    # kernel version is QUEUED/RUNNING, so kernels_output serves that
-    # version's empty tree and hides the last completed run's files.
+    # Output of the last completed run is hidden while a newer version is
+    # queued/running; fall back to the last hand-verified mean.
     if slug in KNOWN_MEAN:
         return KNOWN_MEAN[slug]
     return None
@@ -196,16 +197,31 @@ def submit(job):
 
 
 def pick_candidate():
-    """Return (mean, slug, version, message) of best completed candidate."""
+    """Return (mean, slug, version, message) of best completed candidate.
+
+    A kernel stays eligible while a newer version is queued/running:
+    ``kernels_output`` returns the last COMPLETED run's artifacts, so
+    ``verified_mean`` still reflects proven code. The submitted version is
+    pinned to whichever version produced that output: when the kernel's
+    current status is COMPLETE, the latest pushed version ran to completion
+    and owns the output; while QUEUED/RUNNING, the output belongs to the
+    previous version, so submit one behind the vermap/pin.
+    """
     best = None
     for slug, ver, msg in CANDIDATES:
-        if not kernel_complete(slug):
-            log(f"{slug}: not complete")
+        status = kernel_status(slug)
+        if status is None:
+            log(f"{slug}: status lookup failed")
             continue
         mean = verified_mean(slug)
-        log(f"{slug}: COMPLETE mean={mean}")
-        if mean is not None and (best is None or mean > best[0]):
-            best = (mean, slug, ver, msg)
+        log(f"{slug}: status={status} mean={mean}")
+        if mean is None:
+            continue
+        eff_ver = ver or mapped_version(slug)
+        if "COMPLETE" not in str(status) and eff_ver and eff_ver > 1:
+            eff_ver -= 1  # in-flight version hasn't produced output yet
+        if best is None or mean > best[0]:
+            best = (mean, slug, eff_ver, msg)
     return best
 
 
