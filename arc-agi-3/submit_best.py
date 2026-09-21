@@ -128,8 +128,11 @@ def mapped_version(slug):
 def _mean_from_score_json(path):
     """Mean of per-game 'score' values in a score.json-shaped file."""
     try:
-        games = json.loads(Path(path).read_text(errors="replace")).get("games")
-        vals = [float(g["score"]) for g in games.values() if "score" in g]
+        d = json.loads(Path(path).read_text(errors="replace"))
+        if isinstance(d.get("score"), (int, float)):
+            return float(d["score"])
+        vals = [float(g["score"]) for g in (d.get("games") or {}).values()
+                if "score" in g]
         return sum(vals) / len(vals) if vals else None
     except Exception:
         return None
@@ -138,8 +141,6 @@ def _mean_from_score_json(path):
 def verified_mean(slug):
     """Fetch the kernel's score summary (summary.txt or score.json) and parse
     the mean public-eval score. None on failure."""
-    if slug in KNOWN_MEAN:
-        return KNOWN_MEAN[slug]
     try:
         with tempfile.TemporaryDirectory() as td:
             try:
@@ -151,17 +152,26 @@ def verified_mean(slug):
                     api.kernels_output(slug, td, file_pattern="score.json")
                 except Exception:
                     pass
+            # The kernel .log also lands here and prints a running
+            # "mean score:" line per checkpoint -- take the LAST match in
+            # any .txt, which is the final value.
             for p in Path(td).rglob("*.txt"):
-                m = re.search(r"mean score:\s*([0-9.]+)",
-                              p.read_text(errors="replace"))
-                if m:
-                    return float(m.group(1))
+                matches = re.findall(
+                    r"mean score:\s*([0-9.]+)", p.read_text(errors="replace")
+                )
+                if matches:
+                    return float(matches[-1])
             for p in Path(td).rglob("score.json"):
                 mean = _mean_from_score_json(p)
                 if mean is not None:
                     return mean
     except Exception as e:
         log(f"{slug}: mean fetch failed {str(e)[:120]}")
+    # Fallback only when the live output is unreadable -- e.g. a newer
+    # kernel version is QUEUED/RUNNING, so kernels_output serves that
+    # version's empty tree and hides the last completed run's files.
+    if slug in KNOWN_MEAN:
+        return KNOWN_MEAN[slug]
     return None
 
 
