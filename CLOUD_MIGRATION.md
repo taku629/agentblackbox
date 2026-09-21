@@ -87,10 +87,14 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 - OceanCore local baseline (`run_local.py all 3000`, 25 dev games): mean 0.15%
   — matches the 0.14 LB score. Fallback-only; do not rely on it for placement.
 - Queued for RTX6000 (batch GPU limit is 2, both taken):
-  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp`, `arc3-duck-flash-next-nvfp4-mtp-b`
+  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` and `arc3-duck-anim-flashnext` (v1).
+  The duplicate twin `arc3-duck-flash-next-nvfp4-mtp-b` was deleted to free the
+  slot — the anim-hybrid (different solver variant) now evaluates instead of a
+  redundant copy. Re-push it from a directory whose metadata carries that id if
+  ever needed again.
 - `arc3-duck-anim-flashnext` push used to fail on a title/slug mismatch
-  (409 Conflict); title fixed to slugify correctly, now blocked only by the
-  GPU session limit — `push_hybrid_if_missing.py` retries it.
+  (409 Conflict); title fixed to slugify correctly — `push_hybrid_if_missing.py`
+  pushes it whenever it is missing and a GPU slot is free.
 - Devin automation (pending approval) fires ~5x/day UTC to run
   `push_hybrid_if_missing.py` + `submit_best.py`.
 - T4 Qwen route (14B/32B AWQ) is dead — 28-way eval concurrency starves
