@@ -127,9 +127,10 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   `arc3-duck-qwen-27b-patched` kernel dir was removed — one GPU slot each,
   identical experiment.
 - `submit_ag3_flashnext_patched` → `arc3-duck-flashnext-nvfp4-patched`:
-  keithtyser nvfp4-mtp bundle + ported cap/salvage/shrink patches
-  (dataset `takumuhata/taaf-flashnext-patched`, pinned `/2` since v1 was a
-  stub while the 66MB tar finished processing). Pushes via pending_pushes.json.
+  keithtyser nvfp4-mtp bundle, with cap/salvage/shrink patches applied
+  IN-NOTEBOOK (copies the mounted bundle to WORKING_DIR, anchor-asserted
+  source edits — no new dataset needed; `taaf-flashnext-patched` dataset
+  exists only as a stub and is unused). Pushes via pending_pushes.json.
 - Kaggle CLI gotchas: `datasets create -r tar` silently fails on large bundles
   (stub create + `datasets version -r tar` works); `kernels_output` serves
   only the NEWEST version — an in-flight version hides the completed run's
