@@ -12,7 +12,7 @@
     "gpu"
   ],
   "dataset_sources": [
-    "takumuhata/taaf-flashnext-patched/2",
+    "keithtyser/duck-qwen38-nvfp4-mtp-vllm-smoke-v1",
     "keithtyser/qwen38-flash-next-vllm-nvfp4-runtime-v1"
   ],
   "kernel_sources": [],
