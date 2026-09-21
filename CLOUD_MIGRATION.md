@@ -49,12 +49,15 @@ python3 -m venv .venv && .venv/bin/pip install kaggle nbformat
 .venv/bin/python scripts/build_notebook.py
 .venv/bin/kaggle kernels push -p notebooks
 
-# auto-submit at the next 00:10 UTC slot (edit kernel_version first)
-nohup ../arc-agi-3/.venv/bin/python ../arc-agi-3/watch_and_submit.py \
-    >> ../arc-agi-3/watch_submit.log 2>&1 &
+# IMPORTANT for cloud: sessions suspend when idle, so a long-sleep watcher
+# is unreliable. Prefer one-shot submission after the daily reset (~00:00 UTC):
+cd arc-agi-3 && .venv/bin/python submit_now.py 15   # kernel_version arg
+
+# local-machine alternative: sleep-until-slot watcher (fine on an always-on box)
+nohup .venv/bin/python watch_and_submit.py >> watch_submit.log 2>&1 &
 
 # poll a submission ref until it leaves PENDING
-../arc-prize-2026-agent-work/arc-agi-3/poll_sub.sh <ref>   # run in bg
+./poll_sub.sh <ref>   # run in bg
 ```
 
 ## Current state (2026-09-21)
