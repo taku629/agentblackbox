@@ -119,6 +119,21 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   pushes it whenever it is missing and a GPU slot is free.
 - Devin automation (pending approval) fires ~5x/day UTC to run
   `push_hybrid_if_missing.py` + `submit_best.py`.
+- AGI-2: DSL symbolic-injection variant scored LB **29.72** (ref 56414919);
+  plain `arc-agi2-lb33-89-perfpatch` claims ~33.89 — `AGI2_JOB` switched to
+  plain. DSL prepends wrong symbolic attempt_1s and displaces model attempts.
+- 27B patched-agent runs as v2 on the EXISTING `arc3-duck-qwen3-8-27b` slug
+  (dataset `takumuhata/taaf-anim-27b-patched`); the separate
+  `arc3-duck-qwen-27b-patched` kernel dir was removed — one GPU slot each,
+  identical experiment.
+- `submit_ag3_flashnext_patched` → `arc3-duck-flashnext-nvfp4-patched`:
+  keithtyser nvfp4-mtp bundle + ported cap/salvage/shrink patches
+  (dataset `takumuhata/taaf-flashnext-patched`, pinned `/2` since v1 was a
+  stub while the 66MB tar finished processing). Pushes via pending_pushes.json.
+- Kaggle CLI gotchas: `datasets create -r tar` silently fails on large bundles
+  (stub create + `datasets version -r tar` works); `kernels_output` serves
+  only the NEWEST version — an in-flight version hides the completed run's
+  output; kernel-metadata `id` must equal the slugified title (409 else).
 - T4 Qwen route (14B/32B AWQ) is dead — 28-way eval concurrency starves
   inference, every request read-times-out -> 0.00. Do not resubmit T4.
 - Hidden rerun keeps per-game cap 7920s (~110 games in 4 waves fit 9h).
