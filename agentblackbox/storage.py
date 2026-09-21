@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -74,6 +75,17 @@ CREATE TABLE IF NOT EXISTS errors (
 );
 CREATE INDEX IF NOT EXISTS idx_err_session ON errors(session_id);
 CREATE INDEX IF NOT EXISTS idx_err_ts      ON errors(timestamp);
+
+CREATE TABLE IF NOT EXISTS event_order (
+    sequence     INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id     TEXT NOT NULL UNIQUE,
+    session_id   TEXT NOT NULL,
+    kind         TEXT NOT NULL CHECK(kind IN ('llm', 'tool', 'error')),
+    timestamp    INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_event_order_session
+    ON event_order(session_id, timestamp, sequence);
 """
 
 
@@ -86,14 +98,38 @@ class SQLiteStorage:
 
     def _conn(self) -> sqlite3.Connection:
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            conn = sqlite3.connect(str(self.db_path), timeout=30.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=30000")
             self._local.conn = conn
         return self._local.conn
 
     def _init_db(self) -> None:
         self._conn().executescript(_DDL)
         self._conn().commit()
+
+    def _commit(self) -> None:
+        if not getattr(self._local, "transaction_depth", 0):
+            self._conn().commit()
+
+    @contextmanager
+    def transaction(self):
+        """Atomically group writes on the current thread into one transaction."""
+        depth = getattr(self._local, "transaction_depth", 0)
+        self._local.transaction_depth = depth + 1
+        try:
+            yield self
+            if depth == 0:
+                self._conn().commit()
+        except BaseException:
+            if depth == 0:
+                self._conn().rollback()
+            raise
+        finally:
+            self._local.transaction_depth = depth
 
     # ── sessions ──────────────────────────────────────────────────────────
 
@@ -110,7 +146,7 @@ class SQLiteStorage:
                 json.dumps(session.metadata),
             ),
         )
-        self._conn().commit()
+        self._commit()
 
     def update_session(self, session: Session) -> None:
         self._conn().execute(
@@ -123,7 +159,7 @@ class SQLiteStorage:
                 session.session_id,
             ),
         )
-        self._conn().commit()
+        self._commit()
 
     def get_session(self, session_id: str) -> Optional[Session]:
         row = self._conn().execute(
@@ -153,8 +189,17 @@ class SQLiteStorage:
     # ── llm_calls ─────────────────────────────────────────────────────────
 
     def insert_llm_call(self, call: LLMCall) -> None:
-        self._conn().execute(
-            "INSERT INTO llm_calls VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        metadata = json.dumps(call.metadata)
+        conn = self._conn()
+        registration = conn.execute(
+            "INSERT OR IGNORE INTO event_order(event_id,session_id,kind,timestamp) VALUES (?,?,?,?)",
+            (call.id, call.session_id, "llm", call.timestamp),
+        )
+        if registration.rowcount == 0:
+            self._commit()
+            return
+        conn.execute(
+            "INSERT OR IGNORE INTO llm_calls VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 call.id,
                 call.session_id,
@@ -166,47 +211,67 @@ class SQLiteStorage:
                 call.output_text,
                 call.duration_ms,
                 call.cost_usd,
-                json.dumps(call.metadata),
+                metadata,
             ),
         )
-        self._conn().commit()
+        self._commit()
 
     def get_llm_calls(self, session_id: str) -> list[LLMCall]:
         rows = self._conn().execute(
-            "SELECT * FROM llm_calls WHERE session_id=? ORDER BY timestamp", (session_id,)
+            "SELECT * FROM llm_calls WHERE session_id=? ORDER BY timestamp, id", (session_id,)
         ).fetchall()
         return [_row_to_llm(r) for r in rows]
 
     # ── tool_calls ────────────────────────────────────────────────────────
 
     def insert_tool_call(self, call: ToolCall) -> None:
-        self._conn().execute(
-            "INSERT INTO tool_calls VALUES (?,?,?,?,?,?,?,?,?)",
+        arguments = json.dumps(call.arguments)
+        result = json.dumps(call.result)
+        metadata = json.dumps(call.metadata)
+        conn = self._conn()
+        registration = conn.execute(
+            "INSERT OR IGNORE INTO event_order(event_id,session_id,kind,timestamp) VALUES (?,?,?,?)",
+            (call.id, call.session_id, "tool", call.timestamp),
+        )
+        if registration.rowcount == 0:
+            self._commit()
+            return
+        conn.execute(
+            "INSERT OR IGNORE INTO tool_calls VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 call.id,
                 call.session_id,
                 call.timestamp,
                 call.tool_name,
-                json.dumps(call.arguments),
-                json.dumps(call.result),
+                arguments,
+                result,
                 call.duration_ms,
                 call.error,
-                json.dumps(call.metadata),
+                metadata,
             ),
         )
-        self._conn().commit()
+        self._commit()
 
     def get_tool_calls(self, session_id: str) -> list[ToolCall]:
         rows = self._conn().execute(
-            "SELECT * FROM tool_calls WHERE session_id=? ORDER BY timestamp", (session_id,)
+            "SELECT * FROM tool_calls WHERE session_id=? ORDER BY timestamp, id", (session_id,)
         ).fetchall()
         return [_row_to_tool(r) for r in rows]
 
     # ── errors ────────────────────────────────────────────────────────────
 
     def insert_error(self, err: ErrorRecord) -> None:
-        self._conn().execute(
-            "INSERT INTO errors VALUES (?,?,?,?,?,?,?)",
+        metadata = json.dumps(err.metadata)
+        conn = self._conn()
+        registration = conn.execute(
+            "INSERT OR IGNORE INTO event_order(event_id,session_id,kind,timestamp) VALUES (?,?,?,?)",
+            (err.id, err.session_id, "error", err.timestamp),
+        )
+        if registration.rowcount == 0:
+            self._commit()
+            return
+        conn.execute(
+            "INSERT OR IGNORE INTO errors VALUES (?,?,?,?,?,?,?)",
             (
                 err.id,
                 err.session_id,
@@ -214,16 +279,32 @@ class SQLiteStorage:
                 err.error_type,
                 err.message,
                 err.traceback,
-                json.dumps(err.metadata),
+                metadata,
             ),
         )
-        self._conn().commit()
+        self._commit()
 
     def get_errors(self, session_id: str) -> list[ErrorRecord]:
         rows = self._conn().execute(
-            "SELECT * FROM errors WHERE session_id=? ORDER BY timestamp", (session_id,)
+            "SELECT * FROM errors WHERE session_id=? ORDER BY timestamp, id", (session_id,)
         ).fetchall()
         return [_row_to_error(r) for r in rows]
+
+    def get_events(self, session_id: str) -> list[tuple[int, str, object]]:
+        """Return a deterministic merged event stream, including legacy rows."""
+        ordered = self._conn().execute(
+            "SELECT event_id, kind FROM event_order WHERE session_id=? "
+            "ORDER BY timestamp, sequence", (session_id,)
+        ).fetchall()
+        by_id: dict[str, tuple[int, str, object]] = {}
+        for kind, events in (("llm", self.get_llm_calls(session_id)),
+                             ("tool", self.get_tool_calls(session_id)),
+                             ("error", self.get_errors(session_id))):
+            for event in events:
+                by_id[event.id] = (event.timestamp, kind, event)
+        result = [by_id.pop(row["event_id"]) for row in ordered if row["event_id"] in by_id]
+        result.extend(sorted(by_id.values(), key=lambda item: (item[0], item[1], item[2].id)))
+        return result
 
     # ── analytics ─────────────────────────────────────────────────────────
 
