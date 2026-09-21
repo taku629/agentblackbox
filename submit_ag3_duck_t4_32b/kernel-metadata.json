@@ -1,0 +1,25 @@
+{
+ "id": "takumuhata/arc3-duck-qwen3-32b-awq-t4",
+ "title": "arc3 duck qwen3 32b awq t4",
+ "code_file": "arc3-duck-qwen3-32b-awq-t4.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": false,
+ "keywords": [
+  "gpu"
+ ],
+ "dataset_sources": [
+  "jakobbrggen/taaf-kaggle-source-anim-20260807-anim",
+  "saltb0x/arc3-vllm-wheelhouse-v0271-cu129"
+ ],
+ "kernel_sources": [],
+ "competition_sources": [
+  "arc-prize-2026-arc-agi-3"
+ ],
+ "model_sources": [
+  "qwen-lm/qwen-3/transformers/32b-awq/1"
+ ]
+}

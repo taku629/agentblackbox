@@ -1,0 +1,19 @@
+{
+ "id": "takumuhata/forge-pathfinder-bfs-agent",
+ "title": "forge-pathfinder-bfs-agent",
+ "code_file": "forge-pathfinder.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": false,
+ "enable_tpu": false,
+ "enable_internet": false,
+ "dataset_sources": [
+  "takumuhata/arc3-env-sources-public"
+ ],
+ "kernel_sources": [],
+ "competition_sources": [
+  "arc-prize-2026-arc-agi-3"
+ ],
+ "model_sources": []
+}

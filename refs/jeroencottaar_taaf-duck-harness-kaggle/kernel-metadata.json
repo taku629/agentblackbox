@@ -1,0 +1,27 @@
+{
+  "id": "jeroencottaar/taaf-duck-harness-kaggle",
+  "id_no": 121032562,
+  "title": "taaf-duck-harness-kaggle",
+  "code_file": "taaf-duck-harness-kaggle.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [
+    "gpu"
+  ],
+  "dataset_sources": [
+    "driessmit1/arc3-vllm-h100-wheelhouse-v3",
+    "jeroencottaar/taaf-kaggle-source",
+    "driessmit1/vrfai-qwen3-6-27b-fp8-hf-snapshot"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "arc-prize-2026-arc-agi-3"
+  ],
+  "model_sources": [],
+  "docker_image": "gcr.io/kaggle-images/python@sha256:e5452ce6268c2e8345cfe5141f31ca7ff47032aca46a7ea532bbb87481281d0c",
+  "machine_shape": "None"
+}

@@ -1,9 +1,27 @@
-.venv/
-.venv312/
+# credentials & secrets — NEVER commit
+.kaggle/
+credentials.json
+access_token
+.env
+.env.local
+*.pem
+*.key
+
+# python
 __pycache__/
 *.pyc
+.venv*/
+venv/
+
+# logs & run artifacts
 *.log
-*.npy
-.kaggle/
-*.zip
-arc_agi_3_wheels/
+arc-agi-3/frames/
+arc-agi-3/logs/
+ocean_forge_out/
+
+# heavy regenerable data (re-download from Kaggle)
+arc-agi-3/arc-prize-2026-arc-agi-3.zip
+arc-agi-3/arc_agi_3_wheels/
+
+# migration staging (redundant with repo itself)
+migration/

@@ -11,10 +11,20 @@ continue the ARC Prize 2026 work in Devin Cloud is here.
 - `ARC-AGI-3-Kaggle-Starter/` — kernel port (`agent/my_agent.py` = OceanCore),
   builder (`scripts/build_notebook.py`), built kernel (`notebooks/submission.ipynb`)
 - `arc-prize-2026-paper-track/` — `writeup.md` (1496 words) + `SUBMIT_INSTRUCTIONS.md`
+- `arc-agi-2/` — DSL/perfpatch solver (dev/, ~33.9 public-score kernel)
+- `submit_ag*/` — all kernel dirs (ipynb + metadata): flash-next x2, hybrid,
+  duck 27B/T4 variants, BFS/Forge, AGI-2 DSL/nvarc/perfpatch
+- `bundle_hybrid/` + `taaf_src/` — anim-aware solver + Flash-Next NVFP4
+  serving stack source (also live as dataset `takumuhata/taaf-anim-flashnext-bundle`)
+- `refs/` — downloaded top public kernels for reference
+- Fallback full-workspace tarball: private dataset
+  `takumuhata/arc3-workspace-migration` (`kaggle datasets download`)
 
 ## Secrets
 
-Org secrets already uploaded: `KAGGLE_ACCESS_TOKEN`, `KAGGLE_CREDENTIALS_JSON`.
+Org secrets: `KAGGLE_ACCESS_TOKEN`, `KAGGLE_CREDENTIALS_JSON`,
+`KAGGLE_CREDENTIALS_JSON_20260921` (newest — prefer this one, its
+refresh_token is freshest).
 In the cloud session, inject them, then restore credential files:
 
 ```bash
@@ -60,17 +70,27 @@ nohup .venv/bin/python watch_and_submit.py >> watch_submit.log 2>&1 &
 ./poll_sub.sh <ref>   # run in bg
 ```
 
-## Current state (2026-09-21)
+## Current state (2026-09-21, evening)
 
-- OCEAN v13 submitted: ref `56408885`, public score **0.14**
-- Forge submitted earlier: ref `56378196`, public score **0.08**
-- Kernel v15 pushed (`takumuhata/arc-prize-2026-arc-agi-3-starter`);
-  local watcher armed to submit it at the next 00:10 UTC window
-- Paper-track writeup ready (1496 words); submission is browser-only —
-  see `arc-prize-2026-paper-track/SUBMIT_INSTRUCTIONS.md`
+- AGI-3 today: OCEAN v14 submitted (ref `56408885`, PENDING — scored 0.14
+  on the previous version)
+- AGI-2 today: DSL v1 submitted (ref `56414919`; ~33.9 expected, top 0.5%)
+- Best verified AGI-3 candidate: `arc3-duck-qwen3-8-27b`, public mean 4.79
+- Queued for RTX6000: `arc3-duck-qwen3-8-flash-next-nvfp4-mtp`,
+  `arc3-duck-flash-next-nvfp4-mtp-b`; `arc3-duck-anim-flashnext` pushes when
+  a slot frees (`push_hybrid_when_free.py`)
+- Score-aware watcher `arc-agi-3/watch_submit2.py`: wakes ~00:20 UTC,
+  fetches each completed candidate's `summary.txt`, submits the highest
+  verified mean (>= 4.0); Forge is late fallback. Uses `kernel_versions.json`.
+- T4 Qwen route (14B/32B AWQ) is dead — 28-way eval concurrency starves
+  inference, every request read-times-out -> 0.00. Do not resubmit T4.
+- Hidden rerun keeps per-game cap 7920s (~110 games in 4 waves fit 9h).
+- Leaderboard: 1st 18.81, top1% 5.28, top10% 3.51.
 
 ## Note
 
-`run_local.py`, `watch_and_submit.py`, etc. resolve paths relative to their
-own location — clone anywhere and they work. `push_hybrid_when_free.py` is a
-legacy script referencing dirs outside this repo.
+`run_local.py`, `watch_submit2.py`, `push_hybrid_when_free.py` resolve paths
+via `AGI3_HOME` / `KAGGLE_HOME` env vars (default `~/kaggle/...`) — clone
+anywhere and set the vars, or mirror the `~/kaggle` layout.
+Cloud sessions suspend when idle: prefer one-shot `submit_now.py`-style runs
+timed near the 00:20 UTC window over long-sleep watchers.

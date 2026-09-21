@@ -1,5 +1,5 @@
 import time, sys
-# (venv path removed — install deps into .venv instead)
+sys.path.insert(0,'/home/takumu/kaggle/arc-agi-3/.venv312/lib/python3.12/site-packages')
 from kaggle.api.kaggle_api_extended import KaggleApi
 api = KaggleApi(); api.authenticate()
 last = None

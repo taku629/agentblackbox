@@ -1,0 +1,18 @@
+{
+ "id": "takumuhata/t4-input-probe",
+ "title": "t4 input probe",
+ "code_file": "probe.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": false,
+ "dataset_sources": [
+  "jakobbrggen/taaf-kaggle-source-anim-20260807-anim",
+  "saltb0x/arc3-vllm-wheelhouse-v0271-cu129"
+ ],
+ "kernel_sources": [],
+ "competition_sources": ["arc-prize-2026-arc-agi-3"],
+ "model_sources": ["qwen-lm/qwen-3/transformers/14b-awq/1"]
+}
