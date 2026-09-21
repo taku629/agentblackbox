@@ -75,11 +75,14 @@ FALLBACK_JOB = dict(competition="arc-prize-2026-arc-agi-3",
                     file_name="submission.parquet",
                     message="Forge v7: dynamic valid-actions + embedded solutions + early stop")
 
+# DSL-injection variant measured LB 29.72 (2026-09-21, ref 56414919) vs the
+# plain perfpatch kernel's claimed ~33.89 -- symbolic attempt_1 prepends cost
+# ~4 points on the public eval, so the plain kernel is the better daily driver.
 AGI2_JOB = dict(competition="arc-prize-2026-arc-agi-2",
-                kernel="takumuhata/arc-agi2-lb33-perfpatch-dsl",
+                kernel="takumuhata/arc-agi2-lb33-89-perfpatch",
                 kernel_version=1,
                 file_name="submission.json",
-                message="perfpatch LB33.89 + DSL symbolic injection")
+                message="perfpatch LB33.89 (plain; DSL variant scored 29.72)")
 
 api = KaggleApi()
 api.authenticate()
