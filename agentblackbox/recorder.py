@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import inspect
 import json
+import threading
 import time
 import traceback
 import uuid
@@ -13,6 +15,7 @@ from typing import Any, Callable, Optional, TypeVar
 
 from .cost import calculate_cost
 from .models import ErrorRecord, LLMCall, Session, ToolCall
+from .privacy import redact
 from .storage import DEFAULT_DB_PATH, SQLiteStorage
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -56,6 +59,8 @@ class BlackBox:
         self._session: Optional[Session] = None
         self._token: Optional[contextvars.Token] = None
         self._total_cost = 0.0
+        self._state_lock = threading.RLock()
+        self._stopped = False
 
     # ── storage ───────────────────────────────────────────────────────────
 
@@ -67,26 +72,32 @@ class BlackBox:
     # ── lifecycle ─────────────────────────────────────────────────────────
 
     def start(self) -> "BlackBox":
-        self._session = Session(
-            session_id=self.session_id,
-            agent_name=self.agent_name,
-            start_time=time.time_ns(),
-            status="running",
-        )
-        self._store().create_session(self._session)
-        self._token = _current_bb.set(self)
+        with self._state_lock:
+            if self._session is not None and not self._stopped:
+                return self
+            self._session = Session(
+                session_id=self.session_id,
+                agent_name=self.agent_name,
+                start_time=time.time_ns(),
+                status="running",
+            )
+            self._store().create_session(self._session)
+            self._token = _current_bb.set(self)
+            self._stopped = False
         return self
 
     def stop(self, success: bool = True) -> None:
-        if self._session is None:
-            return
-        self._session.end_time = time.time_ns()
-        self._session.status = "success" if success else "error"
-        self._session.total_cost_usd = self._total_cost
-        self._store().update_session(self._session)
-        if self._token is not None:
-            _current_bb.reset(self._token)
-            self._token = None
+        with self._state_lock:
+            if self._session is None or self._stopped:
+                return
+            self._session.end_time = time.time_ns()
+            self._session.status = "success" if success else "error"
+            self._session.total_cost_usd = self._total_cost
+            self._store().update_session(self._session)
+            self._stopped = True
+            if self._token is not None:
+                _current_bb.reset(self._token)
+                self._token = None
 
     # ── context manager ───────────────────────────────────────────────────
 
@@ -124,6 +135,14 @@ class BlackBox:
         storage: Optional[SQLiteStorage] = None,
     ) -> Callable[[F], F]:
         def decorator(func: F) -> F:
+            if inspect.iscoroutinefunction(func):
+                @functools.wraps(func)
+                async def async_wrapper(*args, **kwargs):
+                    with cls.session(agent_name, db_path=db_path, storage=storage):
+                        return await func(*args, **kwargs)
+
+                return async_wrapper  # type: ignore[return-value]
+
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 with cls.session(agent_name, db_path=db_path, storage=storage):
@@ -150,7 +169,8 @@ class BlackBox:
         metadata: Optional[dict] = None,
     ) -> LLMCall:
         cost = calculate_cost(model, input_tokens, output_tokens)
-        self._total_cost += cost
+        with self._state_lock:
+            self._total_cost += cost
         call = LLMCall(
             id=str(uuid.uuid4()),
             session_id=self.session_id,
@@ -158,11 +178,11 @@ class BlackBox:
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            input_text=input_text,
-            output_text=output_text,
+            input_text=redact(input_text),
+            output_text=redact(output_text),
             duration_ms=duration_ms,
             cost_usd=cost,
-            metadata=metadata or {},
+            metadata=redact(metadata or {}),
         )
         self._store().insert_llm_call(call)
         return call
@@ -181,11 +201,11 @@ class BlackBox:
             session_id=self.session_id,
             timestamp=time.time_ns(),
             tool_name=tool_name,
-            arguments=arguments,
-            result=result,
+            arguments=redact(arguments),
+            result=redact(result),
             duration_ms=duration_ms,
-            error=error,
-            metadata=metadata or {},
+            error=redact(error),
+            metadata=redact(metadata or {}),
         )
         self._store().insert_tool_call(call)
         return call
@@ -202,9 +222,9 @@ class BlackBox:
             session_id=self.session_id,
             timestamp=time.time_ns(),
             error_type=type(exc).__name__,
-            message=str(exc),
-            traceback=tb_str,
-            metadata=metadata or {},
+            message=redact(str(exc)),
+            traceback=redact(tb_str),
+            metadata=redact(metadata or {}),
         )
         self._store().insert_error(err)
         return err
@@ -218,15 +238,7 @@ class BlackBox:
         """
         sid = session_id or self.session_id
         store = self._store()
-        events: list[tuple[int, str, Any]] = []
-        for c in store.get_llm_calls(sid):
-            events.append((c.timestamp, "llm", c))
-        for c in store.get_tool_calls(sid):
-            events.append((c.timestamp, "tool", c))
-        for e in store.get_errors(sid):
-            events.append((e.timestamp, "error", e))
-        events.sort(key=lambda x: x[0])
-        yield from events
+        yield from store.get_events(sid)
 
     # ── query ─────────────────────────────────────────────────────────────
 
@@ -251,18 +263,7 @@ class BlackBox:
             print(f"Session not found: {sid}")
             return
 
-        llm_calls = store.get_llm_calls(sid)
-        tool_calls = store.get_tool_calls(sid)
-        errors = store.get_errors(sid)
-
-        events: list[tuple[int, str, Any]] = []
-        for c in llm_calls:
-            events.append((c.timestamp, "llm", c))
-        for c in tool_calls:
-            events.append((c.timestamp, "tool", c))
-        for e in errors:
-            events.append((e.timestamp, "error", e))
-        events.sort(key=lambda x: x[0])
+        events = store.get_events(sid)
 
         start_dt = datetime.fromtimestamp(session.start_time / 1e9)
         end_dt = datetime.fromtimestamp(session.end_time / 1e9) if session.end_time else None
