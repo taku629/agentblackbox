@@ -46,6 +46,8 @@ CANDIDATES = [
      "TAAF anim-aware solver + Qwen3.8 Flash-Next NVFP4 MTP (hybrid)"),
     ("takumuhata/arc3-duck-qwen3-8-flash-next-nvfp4-mtp", None,
      "Duck Qwen3.8 Flash-Next NVFP4 MTP tuned (public25 profile)"),
+    ("takumuhata/arc3-duck-flashnext-nvfp4-patched", None,
+     "Duck Qwen3.8 Flash-Next NVFP4 MTP + capped-output solver patch"),
     ("takumuhata/arc3-duck-qwen3-8-27b", 2,
      "TAAF duck + Qwen3.6-27B-FP8 + capped-output solver patch"),
 ]
