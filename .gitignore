@@ -1,0 +1,9 @@
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+*.log
+*.npy
+.kaggle/
+*.zip
+arc_agi_3_wheels/
