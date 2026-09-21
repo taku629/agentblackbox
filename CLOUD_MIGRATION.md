@@ -84,6 +84,8 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   local copy so it cannot win the slot race tomorrow.
 - AGI-2 today: DSL v1 submitted (ref `56414919`, PENDING; ~33.9 expected)
 - Best verified AGI-3 candidate: `arc3-duck-qwen3-8-27b`, public mean 4.79
+- OceanCore local baseline (`run_local.py all 3000`, 25 dev games): mean 0.15%
+  — matches the 0.14 LB score. Fallback-only; do not rely on it for placement.
 - Queued for RTX6000 (batch GPU limit is 2, both taken):
   `arc3-duck-qwen3-8-flash-next-nvfp4-mtp`, `arc3-duck-flash-next-nvfp4-mtp-b`
 - `arc3-duck-anim-flashnext` push used to fail on a title/slug mismatch
