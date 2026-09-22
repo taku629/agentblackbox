@@ -76,23 +76,29 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 ./poll_sub.sh <ref>   # run in bg
 ```
 
-## Current state (2026-09-21, morning UTC)
+## Current state (2026-09-22, evening UTC)
 
-- AGI-3 today: OCEAN v13 submitted 00:14 UTC (ref `56408885`, scored 0.14) —
-  a stale `watch_and_submit.py`-style run burned the daily slot. Both old
-  watcher scripts now delegate to `submit_best.py --watch`; kill any unsynced
-  local copy so it cannot win the slot race tomorrow.
-- AGI-2 today: DSL v1 submitted (ref `56414919`) — COMPLETE, **public 29.72**
-- Best verified AGI-3 candidates: `arc3-duck-qwen3-8-27b` public mean 4.79;
-  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` public mean 4.63
+- AGI-3 today: **anim-flashnext submitted 00:25 UTC** (ref `56446903`) —
+  its public-eval mean was **8.21**, the automation picked it per policy
+  (>= STRONG_MEAN). Hidden-run public score: **2.60** (big public→hidden
+  drop as expected — hidden set is different/harder; still 18x the OCEAN
+  0.14 from yesterday).
+- AGI-2: DSL v1 (ref `56414919`) COMPLETE, **public 29.72**.
+- Verified AGI-3 candidate means (public-25 eval): anim-flashnext **8.21**,
+  27b v2 **4.97** (v1 was 4.79 — ~±0.2 draw variance), twin NVFP4 4.63.
+  anim remains the runaway leader — automation will re-submit it tomorrow
+  unless something beats 8.21.
+- GPU quota: **weekly 30h exhausted** — `kernels push` now fails with
+  "Maximum weekly GPU quota". `arc3-duck-qwen-27b-patched` (27B x patched
+  solver) is staged in `submit_ag3_duck_patched/` and will auto-push when
+  quota/slots free (`push_hybrid_if_missing.py` retries every automation run).
 - OceanCore local baseline (`run_local.py all 3000`, 25 dev games): mean 0.15%
   — matches the 0.14 LB score. Fallback-only; do not rely on it for placement.
-- Queued for RTX6000 (batch GPU limit is 2, both taken):
-  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` and `arc3-duck-anim-flashnext` (v1).
-  The duplicate twin `arc3-duck-flash-next-nvfp4-mtp-b` was deleted to free the
-  slot — the anim-hybrid (different solver variant) now evaluates instead of a
-  redundant copy. Re-push it from a directory whose metadata carries that id if
-  ever needed again.
+- Batch GPU slots are now both free (twin + anim + 27b v2 all COMPLETE);
+  further pushes are limited by the weekly 30h quota, not the 2-slot cap.
+  The duplicate twin `arc3-duck-flash-next-nvfp4-mtp-b` was deleted earlier
+  to free its slot. Re-push it from a directory whose metadata carries that
+  id if ever needed again.
 - The two queued kernels are a real A/B, not duplicates:
   - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched,
     `LOCAL_ANALYZER_MAX_OUTPUT=0` (uncapped thinking+output)
