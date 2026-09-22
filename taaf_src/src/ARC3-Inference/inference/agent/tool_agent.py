@@ -173,6 +173,14 @@ _HARD_NOOP_GUARD_ENABLED = _get_env_bool("ARC3_HARD_NOOP_GUARD", True)
 # retrieval tool, and the proactive hint. The no-op guard's frame-count fix is
 # deliberately *not* gated: it is a bug fix, not part of the experiment arm.
 _ANIMATION_AWARENESS_ENABLED = _get_env_bool("ARC3_ANIMATION_AWARENESS", True)
+# Experiment 5 (Action-coverage hint, 2026-09-22): when the agent stalls on a
+# level, surface per-action usage counts so it can pick the least-explored
+# probe instead of re-running the same hypothesis (bp35-style failure: ~90
+# steps cycling LEFT/RIGHT/ACTION7 while MOUSE targets went unenumerated).
+_COVERAGE_HINT_ENABLED = _get_env_bool("ARC3_COVERAGE_HINT", True)
+_COVERAGE_HINT_MIN_TURNS_WITHOUT_PROGRESS = 12
+_COVERAGE_HINT_COOLDOWN_TURNS = 8
+_MOUSE_TARGET_RE = re.compile(r"MOUSE\(row=(\d+),\s*col=(\d+)\)")
 _PERSISTENT_HISTORY_ASSISTANT_TURNS = 30
 # After this many consecutive request failures (timeouts, conn errors) on a
 # turn, progressively shrink persistent history before each retry so the
@@ -1130,6 +1138,7 @@ class ToolAgent:
         # so stages 2 and 3 stay separable from stage 1 in log analysis.
         self.animation_counters: dict[str, int] = {}
         self._reset_animation_hint_state()
+        self._reset_coverage_hint_state()
 
     def _headers(self) -> dict[str, str]:
         api_key = (
@@ -1160,6 +1169,7 @@ class ToolAgent:
             self._noop_guard = NoopGuard() if self._hard_noop_guard_enabled else None
             self.animation_counters = {}
             self._reset_animation_hint_state()
+            self._reset_coverage_hint_state()
 
     @property
     def total_tokens(self) -> int:
@@ -1201,6 +1211,81 @@ class ToolAgent:
 
     def _bump_animation_counter(self, key: str, amount: int = 1) -> None:
         self.animation_counters[key] = self.animation_counters.get(key, 0) + amount
+
+    def _reset_coverage_hint_state(self) -> None:
+        self._coverage_hint_level: Any = None
+        self._coverage_turns_without_progress = 0
+        self._coverage_turns_since_hint = 0
+        self._coverage_counted_action: Any = None
+        self._coverage_action_counts: dict[str, int] = {}
+        self._coverage_mouse_targets: set[tuple[int, int]] = set()
+
+    def _coverage_hint_line(
+        self,
+        previous_step_summary: dict[str, Any] | None,
+        current_level: Any,
+        valid_actions: list[str] | None,
+    ) -> str:
+        """Stage 4: when the agent stalls on a level, surface per-action usage
+        counts (and MOUSE target coverage) so it can probe systematically
+        instead of looping on the same hypothesis."""
+        if not _COVERAGE_HINT_ENABLED:
+            return ""
+        if self._coverage_hint_level != current_level:
+            self._coverage_hint_level = current_level
+            self._coverage_turns_without_progress = 0
+            self._coverage_turns_since_hint = 0
+            self._coverage_counted_action = None
+            self._coverage_action_counts = {}
+            self._coverage_mouse_targets = set()
+        self._coverage_turns_since_hint += 1
+        summary = previous_step_summary or {}
+        if summary.get("level_transition") or summary.get("run_complete"):
+            self._coverage_turns_without_progress = 0
+            return ""
+        self._coverage_turns_without_progress += 1
+        # The same summary is re-shown on inspection-only turns; count each
+        # action sequence once via its end marker.
+        marker = summary.get("end_action_num")
+        if marker is not None and marker != self._coverage_counted_action:
+            self._coverage_counted_action = marker
+            for name in summary.get("executed_actions") or []:
+                name = str(name).strip()
+                if not name:
+                    continue
+                base = name.split("(", 1)[0]
+                self._coverage_action_counts[base] = self._coverage_action_counts.get(base, 0) + 1
+                target = _MOUSE_TARGET_RE.search(name)
+                if target:
+                    self._coverage_mouse_targets.add((int(target.group(1)), int(target.group(2))))
+        if (
+            self._coverage_turns_without_progress < _COVERAGE_HINT_MIN_TURNS_WITHOUT_PROGRESS
+            or self._coverage_turns_since_hint < _COVERAGE_HINT_COOLDOWN_TURNS
+        ):
+            return ""
+        self._coverage_turns_since_hint = 0
+        counts = self._coverage_action_counts
+        usage = ", ".join(
+            f"{name} {count}"
+            for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+        ) or "none yet"
+        untried = [a for a in _normalize_valid_actions(valid_actions) if a not in counts]
+        pieces = [
+            f"You have spent {self._coverage_turns_without_progress} turns on this level without completing it.",
+            f"Action usage so far on this level: {usage}.",
+        ]
+        if self._coverage_mouse_targets:
+            pieces.append(
+                f"MOUSE has targeted {len(self._coverage_mouse_targets)} distinct cells on this level."
+            )
+        if untried:
+            pieces.append(f"Valid actions not yet tried on this level: {', '.join(untried)}.")
+        pieces.append(
+            "Probe systematically: prefer a valid action you have not tried yet, a MOUSE target on "
+            "an object you have not clicked, or a different goal hypothesis over re-running the same sequence."
+        )
+        self._bump_animation_counter("coverage_hint_emitted")
+        return " ".join(pieces)
 
     def _reset_animation_hint_state(self) -> None:
         self._animation_hint_level: Any = None
@@ -1458,6 +1543,9 @@ class ToolAgent:
         hint_line = self._animation_hint_line(previous_step_summary, current_level)
         if hint_line:
             lines.append(hint_line)
+        coverage_line = self._coverage_hint_line(previous_step_summary, current_level, valid_actions)
+        if coverage_line:
+            lines.append(coverage_line)
         state_line = f"Current state: step {current_step}, level {current_level}"
         if observed_max_level > current_level:
             state_line += f" out of observed max level {observed_max_level} so far"
