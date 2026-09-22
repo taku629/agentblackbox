@@ -76,6 +76,28 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 ./poll_sub.sh <ref>   # run in bg
 ```
 
+## Colab verification environment (2026-09-22)
+
+- `arc-agi-3/colab/q38_27b_benchmark.ipynb` — self-contained Colab notebook that
+  reproduces the **27B public-25 benchmark** outside Kaggle (paid Colab, A100-40GB).
+  It downloads the user's bundle + driessmit1's vLLM wheelhouse + the private FP8
+  model + competition `environment_files`/`arc_agi_3_wheels`, recreates the
+  `/kaggle` mount layout with symlinks, pre-installs vLLM into
+  `<working>/vllm-site-packages` (wheelhouse -> PyPI fallback, arch-checked,
+  stamp file makes setup_commands skip its own install), then runs the
+  **unmodified** `takumuhata/arc3-duck-qwen3-8-27b` kernel via papermill.
+- Env contract used: `TAAF_KAGGLE_WORKING_DIR=/content/working`,
+  `TAAF_KAGGLE_BUNDLE_DIR`, `TAAF_KAGGLE_INPUT_PATHS` (maps all dataset/model
+  refs to `/content` paths), `KAGGLE_GPU_TYPE=a100` (passes the substring GPU
+  assert on A100-SXM4), `KAGGLE_GPU_COUNT=1`.
+- Flash-Next NVFP4 kernels (anim etc.) are **not** Colab-runnable: ~135GB
+  weights, no single-GPU fit. Only the 27B FP8 (~30GB) fits A100-40GB.
+- Model download: `kaggle models instances versions download
+  foysalemonshanto/qwen3-8-27b-fp8-repacked-v1/pytorch/hf-fp8/1 --untar` works
+  with the user's credentials (private model, ~24GB, 16 shards).
+- Expected runtime ~5-8h on A100; Colab 24h cap is fine. Score appears in
+  `<working>/summary.txt` + `score.json` (same as Kaggle output).
+
 ## Current state (2026-09-22, evening UTC)
 
 - AGI-3 today: **anim-flashnext submitted 00:25 UTC** (ref `56446903`) —
