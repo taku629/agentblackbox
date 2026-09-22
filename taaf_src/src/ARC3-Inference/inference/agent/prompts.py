@@ -15,6 +15,7 @@ GAME_OVERVIEW_ADDENDUM = (
     "- Your job is to solve the entire game by clearing every level, not just the current screen.\n"
     "- Levels often build on earlier mechanics, but layouts and interactions can still change between levels.\n"
     "- Optimize for as few in-game actions as possible while still being reliable.\n"
+    "- Your per-game wallclock budget is limited. `last_action_result['time_remaining_seconds']` reports the budget left for the current game; treat it as a hard deadline. When it drops below ~15% of the game, stop extended probing/analysis and commit your best current plan or action batch immediately -- partial progress scores better than analysis that expires mid-turn.\n"
     "- In this environment, boards are presented as 64 x 64 color grids rendered with ARC color symbols.\n"
     f"- Color legend: {ARC_COLOR_LEGEND}.\n"
 )
@@ -58,7 +59,7 @@ STRUCTURED_RUNTIME_STATE_ADDENDUM = (
     "- `last_action_frame` is the post-action frame for `last_action`; it matches `current_frame` after a real action.\n"
     "- `transitions` is a chronological list of actual action transitions, excluding the initial seeded frame. Each transition exposes `.action`, `.before_frame`, `.after_frame`, `.frame` (alias of `.after_frame`), and `.result`.\n"
     "- `last_transition` is `transitions[-1]` or `None`. Its `.result` mirrors `last_action_result`; older transitions may have an empty `.result`. For before/after diffs, compare `last_transition.before_frame` to `last_transition.after_frame`; do not compare `current_frame` to `history[-1].frame`.\n"
-    "- `last_action_result` is the persisted result dict from the most recent `action(...)` call. It remains available across later Python inspection calls that do not call `action(...)`, and is `{}` before any action result exists. Read transition metadata from fields/keys such as `last_action_result['board_changed']`, `last_action_result['done']`, `last_action_result['level_completed']`, `last_action_result['game_over']`, `last_action_result['run_complete']`, `last_action_result['reward']`, and `last_action_result['valid_actions']`.\n"
+    "- `last_action_result` is the persisted result dict from the most recent `action(...)` call. It remains available across later Python inspection calls that do not call `action(...)`, and is `{}` before any action result exists. Read transition metadata from fields/keys such as `last_action_result['board_changed']`, `last_action_result['done']`, `last_action_result['level_completed']`, `last_action_result['game_over']`, `last_action_result['run_complete']`, `last_action_result['reward']`, `last_action_result['valid_actions']`, and `last_action_result['time_remaining_seconds']` (your remaining wallclock budget for this game).\n"
     "- `valid_actions` is the current list of valid action names.\n"
     "- Call `action(actions)` to execute one or more real environment actions from Python.\n"
     "- Pass `action(actions)` a list like `['LEFT']` or `[{'action': 'MOUSE', 'row': 4, 'col': 7}]`.\n"
