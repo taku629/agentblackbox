@@ -2933,7 +2933,7 @@ def persist_analyzer_environment(env: dict[str, str]) -> dict[str, str]:
         "OPENAI_API_KEY": "offline-kaggle-local-server",
         "LOCAL_ANALYZER_APP_NAME": "ARC3 Agent Harness",
         "LOCAL_ANALYZER_CONTEXT_WINDOW": str(ANALYZER_CONTEXT),
-        "LOCAL_ANALYZER_MAX_OUTPUT": "0",
+        "LOCAL_ANALYZER_MAX_OUTPUT": "6144",
         "LOCAL_ANALYZER_TOOL_STEPS": "0",
         "LOCAL_ANALYZER_TOOL_TIMEOUT": "30",
         "LOCAL_ANALYZER_TOOL_OUTPUT_TOKENS": "1024",

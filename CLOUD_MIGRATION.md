@@ -92,6 +92,15 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   assert on A100-SXM4), `KAGGLE_GPU_COUNT=1`.
 - Flash-Next NVFP4 kernels (anim etc.) are **not** Colab-runnable: ~135GB
   weights, no single-GPU fit. Only the 27B FP8 (~30GB) fits A100-40GB.
+- **Cap-neutralization bug found + fixed**: every serving path wrote
+  `LOCAL_ANALYZER_MAX_OUTPUT='0'` into `taaf_setup_env.json`, overriding the
+  patched tool_agent default of 6144 — the output cap never actually engaged
+  in ANY run so far (anim 8.21 came from retry-shrink/length-salvage alone).
+  Patched to '6144' in `bundle_anim_v2/serving_setup.py`,
+  `bundle_hybrid/serving_setup.py`, `flash_bundle/serving_setup.py`, and the
+  inline PYSETUP of `setup_commands.json` (27B/taaf_src/taaf). Datasets
+  re-uploaded: anim-flashnext-bundle v5, anim-flashnext-bundle-v2 v3,
+  anim-27b-patched v3.
 - Model download: `kaggle models instances versions download
   foysalemonshanto/qwen3-8-27b-fp8-repacked-v1/pytorch/hf-fp8/1 --untar` works
   with the user's credentials (private model, ~24GB, 16 shards).
