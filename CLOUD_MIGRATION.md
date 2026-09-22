@@ -76,31 +76,48 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 ./poll_sub.sh <ref>   # run in bg
 ```
 
-## Current state (2026-09-21, morning UTC)
+## Current state (2026-09-22, evening UTC)
 
-- AGI-3 today: OCEAN v13 submitted 00:14 UTC (ref `56408885`, scored 0.14) —
-  a stale `watch_and_submit.py`-style run burned the daily slot. Both old
-  watcher scripts now delegate to `submit_best.py --watch`; kill any unsynced
-  local copy so it cannot win the slot race tomorrow.
-- AGI-2 today: DSL v1 submitted (ref `56414919`, PENDING; ~33.9 expected)
-- Best verified AGI-3 candidates: `arc3-duck-qwen3-8-27b` public mean 4.79;
-  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` public mean 4.63
+- AGI-3 today: **anim-flashnext submitted 00:25 UTC** (ref `56446903`) —
+  its public-eval mean was **8.21**, the automation picked it per policy
+  (>= STRONG_MEAN). Hidden-run public score: **2.60** (big public→hidden
+  drop as expected — hidden set is different/harder; still 18x the OCEAN
+  0.14 from yesterday).
+- AGI-2: DSL v1 (ref `56414919`) COMPLETE, **public 29.72**.
+- Verified AGI-3 candidate means (public-25 eval): anim-flashnext **8.21**,
+  27b v2 **4.97** (v1 was 4.79 — ~±0.2 draw variance), twin NVFP4 4.63.
+  anim remains the runaway leader — automation will re-submit it tomorrow
+  unless something beats 8.21.
+- GPU quota: **weekly 30h exhausted** — `kernels push` now fails with
+  "Maximum weekly GPU quota". `arc3-duck-qwen-27b-patched` (27B x patched
+  solver) is staged in `submit_ag3_duck_patched/` and will auto-push when
+  quota/slots free (`push_hybrid_if_missing.py` retries every automation run).
 - OceanCore local baseline (`run_local.py all 3000`, 25 dev games): mean 0.15%
   — matches the 0.14 LB score. Fallback-only; do not rely on it for placement.
-- Queued for RTX6000 (batch GPU limit is 2, both taken):
-  `arc3-duck-qwen3-8-flash-next-nvfp4-mtp` and `arc3-duck-anim-flashnext` (v1).
-  The duplicate twin `arc3-duck-flash-next-nvfp4-mtp-b` was deleted to free the
-  slot — the anim-hybrid (different solver variant) now evaluates instead of a
-  redundant copy. Re-push it from a directory whose metadata carries that id if
-  ever needed again.
-- The two queued kernels are a real A/B, not duplicates:
-  - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched,
-    `LOCAL_ANALYZER_MAX_OUTPUT=0` (uncapped thinking+output)
+- Batch GPU slots are now both free (twin + anim + 27b v2 all COMPLETE);
+  further pushes are limited by the weekly 30h quota, not the 2-slot cap.
+  The duplicate twin `arc3-duck-flash-next-nvfp4-mtp-b` was deleted earlier
+  to free its slot. Re-push it from a directory whose metadata carries that
+  id if ever needed again.
+- The two kernels differ on TWO axes, not one (corrects earlier "A/B" claim):
+  - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched AND
+    **no `animation()` tool** in the python sandbox
   - anim-flashnext uses `takumuhata/taaf-anim-flashnext-bundle`: patched
-    `tool_agent.py` — MAX_OUTPUT default 6144, a `finish_reason=="length"`
-    nudge-to-emit retry, and progressive history shrinking after ≥2
-    consecutive request failures. `bundle_hybrid/` and `taaf_src/` in this
-    repo were synced to the deployed patched file (was previously stale).
+    `tool_agent.py` — a `finish_reason=="length"` nudge-to-emit retry and
+    progressive history shrinking after ≥2 consecutive request failures —
+    **plus the `animation()` sandbox tool** (compact diff timeline of frames
+    produced by the last action).
+  - NOTE: `taaf_setup_env.json` is identical in both runs and sets
+    `LOCAL_ANALYZER_MAX_OUTPUT=0` — the output cap is OFF in both; anim's
+    win is driven by animation()+nudge+shrink, not the cap.
+- Result matrix (public-25 mean): twin 4.63 (no anim, no patch, flash-next) ·
+  27b 4.79/4.97 (anim, no patch, 27B) · **anim 8.21 (anim+patch, flash-next (125B-MoE, ~6B active))**.
+  anim beats twin on 14 games / loses 5 / ties 6 — it rescued ALL 8 of
+  twin's zero-score games (cd82, cn04, dc22, ka59, r11l, sk48, sp80, tn36).
+  `animation()` is heavily used: 120–150 calls/game in anim AND in the 27B
+  kernel (jakobbrggen bundle has it too) — so anim-vs-27b mostly isolates
+  the patch + model speed, not the tool. The staged 27b-patched kernel
+  (27B × anim × patch) is the decisive comparison.
 - Twin result (COMPLETE ~18:40 UTC): **public mean 4.63** vs 27B's 4.79 —
   roughly a wash, but on a different per-game draw: 121 turns/game avg
   (~2.4x the 27B's ~50), 595 tokens/turn. Wins: lp85 1.82→25.04,
@@ -148,3 +165,39 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
 everything relative to the repo checkout, so they work from any clone.
 Cloud sessions suspend when idle: prefer one-shot `submit_best.py` runs
 (or the scheduled Devin automation) over long-sleep watchers.
+
+## Analysis notes (2026-09-21 evening UTC)
+
+- Twin (NVFP4 baseline solver) per-turn stats: mean 595 tok/turn, p90 ~1.7k,
+  2747/3020 turns <2k. Long-thinking pathology is a *tail* on flash-next
+  (8 turns >16k, max 31k ≈ ~40min each at ~9 tok/s effective) — the
+  MAX_OUTPUT=6144 cap's value there is bounding the worst case, not the median.
+  On the 27B the pathology was the median (multi-k thinking every turn), so the
+  `arc3-duck-qwen-27b-patched` candidate is the real cap test.
+- Twin's vLLM watchdog: 0 restarts over the run — serving is stable.
+- Ready-to-push candidate waiting for a GPU slot:
+  `submit_ag3_duck_patched/` -> `takumuhata/arc3-duck-qwen-27b-patched`,
+  dataset `takumuhata/taaf-27b-patched-bundle` (jakobbrggen bundle + patched
+  tool_agent.py). `push_hybrid_if_missing.py` pushes it on the next free slot.
+- anim zero-game autopsy (bp35/g50t/sc25): NOT timeouts (~1/game in ALL
+  transcripts — noise). All games run a uniform ~52 turns in the 7920s cap;
+  zero games simply never crack level-1 mechanics (e.g. bp35 step94/lvl1).
+  Score scales with levels completed (ft09 5lv→47.62, lp85 6lv→41.67) —
+  headroom is progress-per-turn, i.e. solver reasoning quality.
+- Local-eval portability: the public-25 benchmark runs fully OFFLINE —
+  `environment_files` + `arc_agi_3_wheels` ship in the competition dataset
+  (download verified). Only blocker is model serving: flash-next is a
+  125B-MoE (135GB NVFP4 → needs ~96GB-class GPU; impossible on Colab T4);
+  27B FP8 (~30GB) needs ≥40GB VRAM. With such a GPU, the same harness can
+  evaluate outside Kaggle (A/B-relative, not score-comparable).
+- Staged next experiments (auto-push on GPU quota reset ~Sun 00:00 UTC):
+  `arc3-duck-qwen-27b-patched` (27B x anim x nudge/shrink — depth-vs-speed
+  test), then `arc3-duck-anim-v2` (anim stack + Experiment 5 action-coverage
+  hint: when stalled >=12 turns on a level the prompt surfaces per-action
+  usage counts + MOUSE target coverage + untried valid actions — targets
+  bp35-type stuck-loop failures). v2 lives in dataset
+  `taaf-anim-flashnext-bundle-v2` + `bundle_anim_v2/`; production anim
+  kernel stays pinned to v1.
+- Verified GPU needed per lineage: flash-next is 125B-MoE (135GB NVFP4,
+  needs ~96GB) — Kaggle-only; 27B FP8 ~30GB needs >=40GB (Colab Pro A100 or
+  local A6000-class). User's 4070/5070 cannot serve either.

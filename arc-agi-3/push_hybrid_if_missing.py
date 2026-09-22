@@ -23,6 +23,7 @@ KERNELS = [
     # takumuhata/arc3-duck-qwen3-8-27b kernel (dataset repoint in
     # submit_ag3_duck) -- no separate -patched kernel, to avoid spending
     # a batch-GPU slot on a duplicate experiment.
+    ("takumuhata/arc3-duck-anim-v2", REPO / "submit_ag3_anim_v2"),
 ]
 
 KAGGLE = [sys.executable, "-m", "kaggle"]
