@@ -103,12 +103,15 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched AND
     **no `animation()` tool** in the python sandbox
   - anim-flashnext uses `takumuhata/taaf-anim-flashnext-bundle`: patched
-    `tool_agent.py` — MAX_OUTPUT default 6144, a `finish_reason=="length"`
-    nudge-to-emit retry, and progressive history shrinking after ≥2
-    consecutive request failures — **plus the `animation()` sandbox tool**
-    (compact diff timeline of frames produced by the last action).
-- Result matrix (public-25 mean): twin 4.63 (no anim, no patch, 8B-flash) ·
-  27b 4.79/4.97 (anim, no patch, 27B) · **anim 8.21 (anim+patch, 8B-flash)**.
+    `tool_agent.py` — a `finish_reason=="length"` nudge-to-emit retry and
+    progressive history shrinking after ≥2 consecutive request failures —
+    **plus the `animation()` sandbox tool** (compact diff timeline of frames
+    produced by the last action).
+  - NOTE: `taaf_setup_env.json` is identical in both runs and sets
+    `LOCAL_ANALYZER_MAX_OUTPUT=0` — the output cap is OFF in both; anim's
+    win is driven by animation()+nudge+shrink, not the cap.
+- Result matrix (public-25 mean): twin 4.63 (no anim, no patch, flash-next) ·
+  27b 4.79/4.97 (anim, no patch, 27B) · **anim 8.21 (anim+patch, flash-next (125B-MoE, ~6B active))**.
   anim beats twin on 14 games / loses 5 / ties 6 — it rescued ALL 8 of
   twin's zero-score games (cd82, cn04, dc22, ka59, r11l, sk48, sp80, tn36).
   `animation()` is heavily used: 120–150 calls/game in anim AND in the 27B
