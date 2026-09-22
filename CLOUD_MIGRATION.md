@@ -174,3 +174,14 @@ Cloud sessions suspend when idle: prefer one-shot `submit_best.py` runs
   125B-MoE (135GB NVFP4 → needs ~96GB-class GPU; impossible on Colab T4);
   27B FP8 (~30GB) needs ≥40GB VRAM. With such a GPU, the same harness can
   evaluate outside Kaggle (A/B-relative, not score-comparable).
+- Staged next experiments (auto-push on GPU quota reset ~Sun 00:00 UTC):
+  `arc3-duck-qwen-27b-patched` (27B x anim x nudge/shrink — depth-vs-speed
+  test), then `arc3-duck-anim-v2` (anim stack + Experiment 5 action-coverage
+  hint: when stalled >=12 turns on a level the prompt surfaces per-action
+  usage counts + MOUSE target coverage + untried valid actions — targets
+  bp35-type stuck-loop failures). v2 lives in dataset
+  `taaf-anim-flashnext-bundle-v2` + `bundle_anim_v2/`; production anim
+  kernel stays pinned to v1.
+- Verified GPU needed per lineage: flash-next is 125B-MoE (135GB NVFP4,
+  needs ~96GB) — Kaggle-only; 27B FP8 ~30GB needs >=40GB (Colab Pro A100 or
+  local A6000-class). User's 4070/5070 cannot serve either.

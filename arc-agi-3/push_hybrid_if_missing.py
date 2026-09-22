@@ -19,6 +19,7 @@ REPO = HERE.parent
 KERNELS = [
     ("takumuhata/arc3-duck-anim-flashnext", REPO / "submit_ag3_hybrid"),
     ("takumuhata/arc3-duck-qwen-27b-patched", REPO / "submit_ag3_duck_patched"),
+    ("takumuhata/arc3-duck-anim-v2", REPO / "submit_ag3_anim_v2"),
 ]
 
 KAGGLE = [sys.executable, "-m", "kaggle"]

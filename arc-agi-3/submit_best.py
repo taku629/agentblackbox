@@ -44,6 +44,8 @@ VERMAP_FILE = HERE / "kernel_versions.json"
 CANDIDATES = [
     ("takumuhata/arc3-duck-anim-flashnext", None,
      "TAAF anim-aware solver + Qwen3.8 Flash-Next NVFP4 MTP (hybrid)"),
+    ("takumuhata/arc3-duck-anim-v2", None,
+     "TAAF anim-aware solver v2 (coverage hint) + Qwen3.8 Flash-Next NVFP4 MTP"),
     ("takumuhata/arc3-duck-qwen-27b-patched", None,
      "TAAF duck + Qwen3.8-27B-FP8 + capped-output solver patch"),
     ("takumuhata/arc3-duck-qwen3-8-flash-next-nvfp4-mtp", None,
