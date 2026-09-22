@@ -99,14 +99,22 @@ nohup .venv/bin/python submit_best.py --watch >> submit_best.log 2>&1 &
   The duplicate twin `arc3-duck-flash-next-nvfp4-mtp-b` was deleted earlier
   to free its slot. Re-push it from a directory whose metadata carries that
   id if ever needed again.
-- The two queued kernels are a real A/B, not duplicates:
-  - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched,
-    `LOCAL_ANALYZER_MAX_OUTPUT=0` (uncapped thinking+output)
+- The two kernels differ on TWO axes, not one (corrects earlier "A/B" claim):
+  - twin uses keithtyser's baseline bundle: `tool_agent.py` unpatched AND
+    **no `animation()` tool** in the python sandbox
   - anim-flashnext uses `takumuhata/taaf-anim-flashnext-bundle`: patched
     `tool_agent.py` — MAX_OUTPUT default 6144, a `finish_reason=="length"`
     nudge-to-emit retry, and progressive history shrinking after ≥2
-    consecutive request failures. `bundle_hybrid/` and `taaf_src/` in this
-    repo were synced to the deployed patched file (was previously stale).
+    consecutive request failures — **plus the `animation()` sandbox tool**
+    (compact diff timeline of frames produced by the last action).
+- Result matrix (public-25 mean): twin 4.63 (no anim, no patch, 8B-flash) ·
+  27b 4.79/4.97 (anim, no patch, 27B) · **anim 8.21 (anim+patch, 8B-flash)**.
+  anim beats twin on 14 games / loses 5 / ties 6 — it rescued ALL 8 of
+  twin's zero-score games (cd82, cn04, dc22, ka59, r11l, sk48, sp80, tn36).
+  `animation()` is heavily used: 120–150 calls/game in anim AND in the 27B
+  kernel (jakobbrggen bundle has it too) — so anim-vs-27b mostly isolates
+  the patch + model speed, not the tool. The staged 27b-patched kernel
+  (27B × anim × patch) is the decisive comparison.
 - Twin result (COMPLETE ~18:40 UTC): **public mean 4.63** vs 27B's 4.79 —
   roughly a wash, but on a different per-game draw: 121 turns/game avg
   (~2.4x the 27B's ~50), 595 tokens/turn. Wins: lp85 1.82→25.04,
