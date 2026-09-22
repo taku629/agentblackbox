@@ -163,3 +163,14 @@ Cloud sessions suspend when idle: prefer one-shot `submit_best.py` runs
   `submit_ag3_duck_patched/` -> `takumuhata/arc3-duck-qwen-27b-patched`,
   dataset `takumuhata/taaf-27b-patched-bundle` (jakobbrggen bundle + patched
   tool_agent.py). `push_hybrid_if_missing.py` pushes it on the next free slot.
+- anim zero-game autopsy (bp35/g50t/sc25): NOT timeouts (~1/game in ALL
+  transcripts — noise). All games run a uniform ~52 turns in the 7920s cap;
+  zero games simply never crack level-1 mechanics (e.g. bp35 step94/lvl1).
+  Score scales with levels completed (ft09 5lv→47.62, lp85 6lv→41.67) —
+  headroom is progress-per-turn, i.e. solver reasoning quality.
+- Local-eval portability: the public-25 benchmark runs fully OFFLINE —
+  `environment_files` + `arc_agi_3_wheels` ship in the competition dataset
+  (download verified). Only blocker is model serving: flash-next is a
+  125B-MoE (135GB NVFP4 → needs ~96GB-class GPU; impossible on Colab T4);
+  27B FP8 (~30GB) needs ≥40GB VRAM. With such a GPU, the same harness can
+  evaluate outside Kaggle (A/B-relative, not score-comparable).
