@@ -1613,6 +1613,17 @@ class ToolAgent:
             }
         ]
 
+    def _effective_max_output_tokens(self, request_timeout_seconds: float | None) -> int:
+        cap = self._max_output_tokens
+        if cap is None or cap <= 0:
+            cap = 6144
+        if request_timeout_seconds is None:
+            return cap
+        budget = int(request_timeout_seconds * 20.0)
+        if budget <= 0:
+            return cap
+        return max(512, min(cap, budget))
+
     def _chat_completion(
         self,
         messages: list[dict[str, Any]],
@@ -1624,7 +1635,7 @@ class ToolAgent:
             provider=self._model.provider,
             model=self._model.model_id,
             messages=messages,
-            max_tokens=self._max_output_tokens,
+            max_tokens=self._effective_max_output_tokens(request_timeout_seconds),
             temperature=_LOCAL_ANALYZER_TEMPERATURE,
             top_p=_LOCAL_ANALYZER_TOP_P,
             top_k=_LOCAL_ANALYZER_TOP_K,
