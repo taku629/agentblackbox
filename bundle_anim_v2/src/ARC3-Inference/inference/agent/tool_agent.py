@@ -257,6 +257,36 @@ def _action_animated(payload: dict[str, Any]) -> bool:
     return _payload_frame_count(payload) > 1
 
 
+_HUD_VOLATILE_CAP = 64
+
+
+def _grid_diff_cells(before: Any, after: Any) -> set[tuple[int, int]]:
+    """Coordinates whose value changed between two boards."""
+    cells: set[tuple[int, int]] = set()
+    for r, (row_a, row_b) in enumerate(zip(before or (), after or ())):
+        for c, (cell_a, cell_b) in enumerate(zip(row_a, row_b)):
+            if cell_a != cell_b:
+                cells.add((r, c))
+    return cells
+
+
+def _masked_board_signature(grid: Any, volatile_cells: set[tuple[int, int]]) -> str:
+    """Board signature ignoring known-volatile (e.g. HUD timer) cells.
+
+    ARC-AGI-3 boards include a ticking HUD strip: those cells flip on nearly
+    every transition, so a raw-grid signature never repeats and the no-op
+    guard could never match a state twice. Masking the volatile cells makes
+    signatures stable again.
+    """
+    if not volatile_cells:
+        return board_signature(grid)
+    masked = [
+        [0 if (r, c) in volatile_cells else cell for c, cell in enumerate(row)]
+        for r, row in enumerate(grid or ())
+    ]
+    return board_signature(masked)
+
+
 def _format_valid_action_line(valid_actions: list[str] | None) -> str:
     names = _normalize_valid_actions(valid_actions)
     if not names:
@@ -315,6 +345,7 @@ def _aggregate_action_batch_result(
     total_reward = 0.0
     board_changed = False
     frame_count = 0
+    max_diff_cells = 0
     for item in executed_results:
         names = item.get("executed_actions")
         if isinstance(names, list) and names:
@@ -328,6 +359,10 @@ def _aggregate_action_batch_result(
         board_changed = board_changed or bool(item.get("board_changed"))
         # Max, not sum -- see the same aggregation in solver.step_env.
         frame_count = max(frame_count, _payload_frame_count(item))
+        try:
+            max_diff_cells = max(max_diff_cells, int(item.get("board_diff_cells") or 0))
+        except (TypeError, ValueError):
+            pass
 
     result: dict[str, Any] = {
         "executed": bool(executed_results),
@@ -338,6 +373,7 @@ def _aggregate_action_batch_result(
         "state": base.get("state"),
         "valid_actions": list(valid_actions),
         "board_changed": board_changed,
+        "board_diff_cells": max_diff_cells,
         "frame_count": frame_count or 1,
         "done": bool(last_executed and last_executed.get("done")),
         "level_completed": bool(last_executed and last_executed.get("level_completed")),
@@ -1116,6 +1152,7 @@ class ToolAgent:
         )
         self._history_messages: list[dict[str, Any]] = []
         self._session_runtime_dir: Path | None = None
+        self._volatile_cells: set[tuple[int, int]] = set()
         self._session_total_tokens = 0
         self._session_generated_tokens = 0
         self._step_env_callback: Callable[[dict[str, Any]], dict[str, Any]] | None = None
@@ -1171,6 +1208,7 @@ class ToolAgent:
             self._recent_step_signatures = []
             self._level_action_count = 0
             self._noop_guard = NoopGuard() if self._hard_noop_guard_enabled else None
+            self._volatile_cells = set()
             self.animation_counters = {}
             self._reset_animation_hint_state()
             self._reset_coverage_hint_state()
@@ -1820,6 +1858,7 @@ class ToolAgent:
             "state": payload.get("state"),
             "valid_actions": payload.get("valid_actions", []),
             "board_changed": bool(payload.get("board_changed")),
+            "board_diff_cells": payload.get("board_diff_cells"),
             "frame_count": _payload_frame_count(payload),
             "done": bool(payload.get("done")),
             "level_completed": bool(payload.get("level_completed")),
@@ -1895,11 +1934,12 @@ class ToolAgent:
         # Board signature/level *before* the next real action, so a known
         # no-op can be keyed by the exact state it was tried in. Starts at the
         # pre-call frame and advances after each executed action.
-        noop_guard_board_sig = board_signature(current_frame.grid) if current_frame is not None else board_signature(())
+        noop_guard_board_sig = _masked_board_signature(current_frame.grid, self._volatile_cells) if current_frame is not None else board_signature(())
+        noop_guard_grid = current_frame.grid if current_frame is not None else None
         noop_guard_level = current_frame.level if current_frame is not None else 1
 
         def _handle_action(actions: list[dict[str, Any]]) -> dict[str, Any]:
-            nonlocal terminal_action_result, noop_guard_board_sig, noop_guard_level
+            nonlocal terminal_action_result, noop_guard_board_sig, noop_guard_grid, noop_guard_level
             if self._step_env_callback is None:
                 raise RuntimeError("action(actions) is not available in this session.")
             normalized_actions = self._normalize_python_actions(actions)
@@ -1980,17 +2020,24 @@ class ToolAgent:
                 if compact_payload.get("executed") and _terminal_action_reason(compact_payload):
                     terminal_action_result = compact_payload
                 self._last_action_result = dict(compact_payload)
+                refreshed_frame, _ = load_runtime_state(state_path)
+                real_change: bool | None = None
+                if refreshed_frame is not None and noop_guard_grid is not None:
+                    diff_cells = _grid_diff_cells(noop_guard_grid, refreshed_frame.grid)
+                    real_change = len(diff_cells) > 4 or bool(diff_cells - self._volatile_cells)
+                    if 0 < len(diff_cells) <= 4 and len(self._volatile_cells) <= _HUD_VOLATILE_CAP:
+                        self._volatile_cells |= diff_cells
                 if self._noop_guard is not None and pending_action_sig and compact_payload.get("executed"):
                     self._noop_guard.observe(
                         level=noop_guard_level,
                         board_before_sig=noop_guard_board_sig,
                         action_sig=pending_action_sig,
-                        board_changed=bool(compact_payload.get("board_changed")),
+                        board_changed=(real_change if real_change is not None else bool(compact_payload.get("board_changed"))),
                         animated=_action_animated(compact_payload),
                     )
-                refreshed_frame, _ = load_runtime_state(state_path)
                 if refreshed_frame is not None:
-                    noop_guard_board_sig = board_signature(refreshed_frame.grid)
+                    noop_guard_board_sig = _masked_board_signature(refreshed_frame.grid, self._volatile_cells)
+                    noop_guard_grid = refreshed_frame.grid
                     noop_guard_level = refreshed_frame.level
                 return {
                     "action_result": compact_payload,
@@ -2031,17 +2078,24 @@ class ToolAgent:
                     last_failed = sub_compact
                     break
                 executed_results.append(sub_compact)
+                refreshed_frame, _ = load_runtime_state(state_path)
+                real_change = None
+                if refreshed_frame is not None and noop_guard_grid is not None:
+                    diff_cells = _grid_diff_cells(noop_guard_grid, refreshed_frame.grid)
+                    real_change = len(diff_cells) > 4 or bool(diff_cells - self._volatile_cells)
+                    if 0 < len(diff_cells) <= 4 and len(self._volatile_cells) <= _HUD_VOLATILE_CAP:
+                        self._volatile_cells |= diff_cells
                 if self._noop_guard is not None and action_sig:
                     self._noop_guard.observe(
                         level=noop_guard_level,
                         board_before_sig=noop_guard_board_sig,
                         action_sig=action_sig,
-                        board_changed=bool(sub_compact.get("board_changed")),
+                        board_changed=(real_change if real_change is not None else bool(sub_compact.get("board_changed"))),
                         animated=_action_animated(sub_compact),
                     )
-                refreshed_frame, _ = load_runtime_state(state_path)
                 if refreshed_frame is not None:
-                    noop_guard_board_sig = board_signature(refreshed_frame.grid)
+                    noop_guard_board_sig = _masked_board_signature(refreshed_frame.grid, self._volatile_cells)
+                    noop_guard_grid = refreshed_frame.grid
                     noop_guard_level = refreshed_frame.level
                 if _terminal_action_reason(sub_compact):
                     terminal_action_result = sub_compact
