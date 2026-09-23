@@ -303,3 +303,38 @@ never submit.
   markup; 1.7b emits valid `python` calls but weak args; 4b needs >120s.
 - Grid-diff cell count is THE no-op signal (HUD bars tick every action
   at varying positions per game — no fixed mask works).
+
+## 2026-09-24 — NoopGuard revival (same HUD root cause)
+
+- **Known-Noop-Guard was dead on real games too**: `board_signature()`
+  hashes the full grid incl. the ticking HUD strip → signatures never
+  repeat → `is_known_noop` could never match; and `observe` used the
+  contaminated `board_changed` → nothing ever recorded as a no-op.
+- **Fix (tool_agent.py x4, deployed)**: track volatile cells (transitions
+  with diff<=4 add their cells to `self._volatile_cells`, cap 64),
+  `_masked_board_signature()` zeroes them, `real_change = len(diff)>4 or
+  bool(diff - volatile)` feeds `NoopGuard.observe`. Functional test:
+  noop recorded turn2+, blocked on retry; real moves unaffected.
+- **`_describe_last_outcome` precision**: summary.max_board_diff_cells
+  <=4 now tells the model "likely a no-op" instead of the old always-true
+  "produced a board change" (it was misleading the model every turn).
+- **Animation summary**: `summarize_animation(board_changed=diff>4)` —
+  "final board identical, effect lives in intermediate frames" hint was
+  dead (HUD tick made every board "changed"). Revived.
+- **solver.py**: `board_diff_cells` now in events.jsonl records and
+  batch-max aggregate; prompts.py documents the field for the model.
+- **flashnext-patched stays cap-only isolate** (keithtyser datasets +
+  notebook patcher, does NOT consume taaf bundles) — by design.
+- **Kaggle OAuth**: access_token lives 12h; CLI "auto-refresh" uses a
+  30-min post-expiry grace so calls fail ~30min with stale token. Force:
+  ```
+  .venv-kaggle/bin/python -c "
+  from kagglesdk.kaggle_client import KaggleClient
+  from kagglesdk.kaggle_creds import KaggleCredentials
+  c = KaggleCredentials.load(client=KaggleClient()); c.refresh_access_token()"
+  ```
+- **Submission limits verified**: AGI-3 = 1/day (2nd submit 403s);
+  leaderboard top ~19.4, we rank ~171/3274 at 3.98. AGI-2 = pinned v1
+  30.56 deterministic; latest kernel output degenerate (harmless).
+- **AGI-2 DSL dead deeper**: zero candidate fns on eval (not format) —
+  no hybrid attempt_2 fill possible.
