@@ -104,6 +104,17 @@ def _grid_from_state(state: taaf.game.GameState | None) -> tuple[tuple[int, ...]
     return tuple(tuple(int(cell) for cell in row) for row in rows)
 
 
+def _grid_diff_count(
+    a: tuple[tuple[int, ...], ...], b: tuple[tuple[int, ...], ...]
+) -> int:
+    return sum(
+        1
+        for row_a, row_b in zip(a, b)
+        for cell_a, cell_b in zip(row_a, row_b)
+        if cell_a != cell_b
+    )
+
+
 def _raw_frames(state: taaf.game.GameState | None) -> list[tuple[tuple[int, ...], ...]]:
     """Every frame the environment returned for one action.
 
@@ -815,7 +826,9 @@ class _HarnessGameSession:
             1.0, float(self.game.number_of_levels)
         )
         raw_state = new_state.raw.state
-        board_changed = previous_grid != _grid_from_state(new_state)
+        new_grid = _grid_from_state(new_state)
+        board_diff_cells = _grid_diff_count(previous_grid, new_grid)
+        board_changed = board_diff_cells > 0
         frames = _raw_frames(new_state)
         frame_count = len(frames)
         animation = (
@@ -835,6 +848,7 @@ class _HarnessGameSession:
             "state": raw_state.name,
             "valid_actions": to_model_actions(_engine_action_names(self.game)),
             "board_changed": board_changed,
+            "board_diff_cells": board_diff_cells,
             # Kept separate from board_changed on purpose: board_changed keeps
             # meaning "the visible board differs", while frame_count carries
             # the independent "this action produced an animation" evidence the

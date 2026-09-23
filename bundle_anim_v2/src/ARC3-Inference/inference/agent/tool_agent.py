@@ -1395,7 +1395,17 @@ class ToolAgent:
         if animation is not None:
             summary["animation"] = animation
         signature = tuple(executed_actions)
-        self._recent_step_signatures.append((signature, bool(summary["board_changed"])))
+        max_diff = 0
+        for item in executed_results:
+            cells = item.get("board_diff_cells")
+            if cells is None:
+                cells = 0 if not item.get("board_changed") else 9
+            try:
+                max_diff = max(max_diff, int(cells))
+            except (TypeError, ValueError):
+                max_diff = max(max_diff, 9)
+        summary["max_board_diff_cells"] = max_diff
+        self._recent_step_signatures.append((signature, max_diff <= 4))
         del self._recent_step_signatures[:-10]
         self._level_action_count = (
             total_executed if summary["level_transition"] else self._level_action_count + total_executed
@@ -1408,8 +1418,8 @@ class ToolAgent:
         trail = self._recent_step_signatures
         repeats = 0
         last_sig: tuple[str, ...] | None = None
-        for signature, board_changed in reversed(trail):
-            if not signature or board_changed:
+        for signature, unchanged in reversed(trail):
+            if not signature or not unchanged:
                 break
             if last_sig is None:
                 last_sig = signature
