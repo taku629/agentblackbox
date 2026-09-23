@@ -276,3 +276,30 @@ thatakumu@gmail.com (see ~/colab_notes.txt).
 ticks 00:25/08:25/16:25/22:05/23:35 UTC → push_hybrid_if_missing →
 push_pending → submit_best (≥5.5 anytime, ≥4.0 after 22:00). T4 kernels
 never submit.
+
+## 2026-09-23 late — stagnation-trigger fix + real-LLM smoke path
+
+- **Fix (16324ca, all 4 source trees + 3 datasets)**: the stagnation
+  detector's `board_changed` trigger was dead on real games — the grid
+  includes the HUD timer bar, so almost every action diffs ≥1 cell
+  (bp35: 93/93 turns "changed"). Now solver.py emits `board_diff_cells`
+  per action; the detector fires on `same batch ≥3 consecutive AND every
+  diff ≤4 cells` (measured bimodal: HUD ticks ≤4, real moves ≥47).
+  Real-data replay: bp35's MOUSE-batch repeat warns on turn 3; 13×RIGHT
+  (47-cell) correctly stays silent.
+- **CPU smoke-test path (reusable)**: `ollama pull qwen3:1.7b` (installed
+  at 127.0.0.1:11434, OpenAI-compatible) → run the real harness on CPU:
+  ```
+  cd jak27/patched && PYTHONPATH=src/ARC3-Inference:src/tufa-arc-agi-framework/src \
+  LOCAL_ANALYZER_BASE_URL=http://127.0.0.1:11434/v1 LOCAL_ANALYZER_MODEL_ID=qwen3:1.7b \
+  LOCAL_ANALYZER_PROVIDER=vllm LOCAL_ANALYZER_ENABLE_THINKING=false \
+  <repo>/arc-agi-3/.venv/bin/python -m inference.framework.run --game ft09 \
+  --environments-dir <repo>/arc-agi-3/environment_files --max-actions 8 \
+  --max-runtime-minutes 20 --concurrent-jobs 1 --experiment-dir /tmp/runX \
+  --model local --analyzer-timeout 180
+  ```
+  Verified end-to-end: real prompt (with all new lines) → real model
+  tool_calls → real python sandbox → real game env. 0.6B emits wrong
+  markup; 1.7b emits valid `python` calls but weak args; 4b needs >120s.
+- Grid-diff cell count is THE no-op signal (HUD bars tick every action
+  at varying positions per game — no fixed mask works).
