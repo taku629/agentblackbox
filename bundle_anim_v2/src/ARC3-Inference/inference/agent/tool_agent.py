@@ -1122,6 +1122,7 @@ class ToolAgent:
         self._current_valid_actions: list[str] = []
         self._last_step_summary: dict[str, Any] | None = None
         self._last_action_result: dict[str, Any] | None = None
+        self._recent_step_signatures: list[tuple[tuple[str, ...], bool]] = []
         self._summarized_knowledge = _empty_world_model()
         self._consecutive_request_failures = 0
         # Explicit ctor arg (e.g. from a pickled HarnessSolver deployed to
@@ -1166,6 +1167,7 @@ class ToolAgent:
             self._last_step_summary = None
             self._last_action_result = None
             self._summarized_knowledge = _empty_world_model()
+            self._recent_step_signatures = []
             self._noop_guard = NoopGuard() if self._hard_noop_guard_enabled else None
             self.animation_counters = {}
             self._reset_animation_hint_state()
@@ -1390,7 +1392,30 @@ class ToolAgent:
         animation = pick_animation([item.get("animation") for item in executed_results])
         if animation is not None:
             summary["animation"] = animation
+        signature = tuple(executed_actions)
+        self._recent_step_signatures.append((signature, bool(summary["board_changed"])))
+        del self._recent_step_signatures[:-10]
         return summary
+
+    def _stagnation_hint_line(self) -> str:
+        """Warn when identical action batches repeat without changing the board."""
+        trail = self._recent_step_signatures
+        repeats = 0
+        last_sig: tuple[str, ...] | None = None
+        for signature, board_changed in reversed(trail):
+            if not signature or board_changed:
+                break
+            if last_sig is None:
+                last_sig = signature
+            if signature != last_sig:
+                break
+            repeats += 1
+        if repeats >= 3:
+            return (
+                f"Warning: the same action sequence has repeated {repeats} turns "
+                "without changing the board -- it is not working. Try a different plan."
+            )
+        return ""
 
     def _describe_last_outcome(self, summary: dict[str, Any] | None) -> str:
         if not summary:
@@ -1546,6 +1571,9 @@ class ToolAgent:
         coverage_line = self._coverage_hint_line(previous_step_summary, current_level, valid_actions)
         if coverage_line:
             lines.append(coverage_line)
+        stagnation_line = self._stagnation_hint_line()
+        if stagnation_line:
+            lines.append(stagnation_line)
         state_line = f"Current state: step {current_step}, level {current_level}"
         if observed_max_level > current_level:
             state_line += f" out of observed max level {observed_max_level} so far"
