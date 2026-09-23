@@ -515,6 +515,7 @@ class _HarnessGameSession:
                 "action_display": payload.get("action_display"),
                 "reward": payload.get("reward"),
                 "board_changed": payload.get("board_changed"),
+                "board_diff_cells": payload.get("board_diff_cells"),
                 "done": payload.get("done"),
                 "level_completed": payload.get("level_completed"),
                 "game_over": payload.get("game_over"),
@@ -767,6 +768,10 @@ class _HarnessGameSession:
         ]
         final_payload["board_changed"] = any(
             bool(item.get("board_changed")) for item in executed_payloads
+        )
+        final_payload["board_diff_cells"] = max(
+            (int(item.get("board_diff_cells") or 0) for item in executed_payloads),
+            default=0,
         )
         # Max, not sum: the question this answers is "did any single action in
         # this batch animate", and summing per-action frames would make three

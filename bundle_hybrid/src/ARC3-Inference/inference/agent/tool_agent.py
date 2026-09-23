@@ -1497,7 +1497,10 @@ class ToolAgent:
             return f"{prefix} reached GAME_OVER."
 
         pieces = [prefix]
-        if summary.get("board_changed"):
+        max_cells = summary.get("max_board_diff_cells")
+        if isinstance(max_cells, int) and max_cells <= 4:
+            pieces.append("produced no real board change (at most HUD/timer cells moved); the action was likely a no-op.")
+        elif summary.get("board_changed"):
             pieces.append("produced a board change; verify that it affected gameplay objects rather than only HUD elements.")
         else:
             pieces.append("did not show a confirmed board change; treat this as weak evidence until verified.")
