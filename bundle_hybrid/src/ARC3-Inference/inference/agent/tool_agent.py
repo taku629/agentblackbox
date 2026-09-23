@@ -1123,6 +1123,7 @@ class ToolAgent:
         self._last_step_summary: dict[str, Any] | None = None
         self._last_action_result: dict[str, Any] | None = None
         self._recent_step_signatures: list[tuple[tuple[str, ...], bool]] = []
+        self._level_action_count = 0
         self._summarized_knowledge = _empty_world_model()
         self._consecutive_request_failures = 0
         # Explicit ctor arg (e.g. from a pickled HarnessSolver deployed to
@@ -1168,6 +1169,7 @@ class ToolAgent:
             self._last_action_result = None
             self._summarized_knowledge = _empty_world_model()
             self._recent_step_signatures = []
+            self._level_action_count = 0
             self._noop_guard = NoopGuard() if self._hard_noop_guard_enabled else None
             self.animation_counters = {}
             self._reset_animation_hint_state()
@@ -1395,6 +1397,10 @@ class ToolAgent:
         signature = tuple(executed_actions)
         self._recent_step_signatures.append((signature, bool(summary["board_changed"])))
         del self._recent_step_signatures[:-10]
+        self._level_action_count = (
+            total_executed if summary["level_transition"] else self._level_action_count + total_executed
+        )
+        summary["level_action_count"] = self._level_action_count
         return summary
 
     def _stagnation_hint_line(self) -> str:
@@ -1574,7 +1580,15 @@ class ToolAgent:
         stagnation_line = self._stagnation_hint_line()
         if stagnation_line:
             lines.append(stagnation_line)
+        level_actions = 0
+        if previous_step_summary is not None:
+            try:
+                level_actions = int(previous_step_summary.get("level_action_count") or 0)
+            except (TypeError, ValueError):
+                level_actions = 0
         state_line = f"Current state: step {current_step}, level {current_level}"
+        if level_actions:
+            state_line += f", {level_actions} actions used on this level"
         if observed_max_level > current_level:
             state_line += f" out of observed max level {observed_max_level} so far"
         state_line += "."

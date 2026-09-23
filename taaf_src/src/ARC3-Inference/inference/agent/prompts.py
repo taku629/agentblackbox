@@ -15,6 +15,7 @@ GAME_OVERVIEW_ADDENDUM = (
     "- Your job is to solve the entire game by clearing every level, not just the current screen.\n"
     "- Levels often build on earlier mechanics, but layouts and interactions can still change between levels.\n"
     "- Optimize for as few in-game actions as possible while still being reliable.\n"
+    "- Games enforce a hidden per-level action budget; the state line reports `actions used on this level`. If that count climbs without progress, change plans instead of grinding out attempts -- a burned budget ends the level.\n"
     "- Your per-game wallclock budget is limited. `last_action_result['time_remaining_seconds']` reports the budget left for the current game; treat it as a hard deadline. When it drops below ~15% of the game, stop extended probing/analysis and commit your best current plan or action batch immediately -- partial progress scores better than analysis that expires mid-turn.\n"
     "- In this environment, boards are presented as 64 x 64 color grids rendered with ARC color symbols.\n"
     f"- Color legend: {ARC_COLOR_LEGEND}.\n"
