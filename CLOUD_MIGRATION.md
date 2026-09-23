@@ -232,3 +232,47 @@ Cloud sessions suspend when idle: prefer one-shot `submit_best.py` runs
 - Verified GPU needed per lineage: flash-next is 125B-MoE (135GB NVFP4,
   needs ~96GB) — Kaggle-only; 27B FP8 ~30GB needs >=40GB (Colab Pro A100 or
   local A6000-class). User's 4070/5070 cannot serve either.
+
+## Loop state (2026-09-23 UTC)
+
+**Scores**: AGI-3 LB 3.98 (anim-flashnext v1; identical code scored 2.60 the
+day before — hidden-set variance ~±0.7). AGI-2 LB 30.56 (plain perfpatch,
+deterministic across 2 submissions; DSL variant 29.72 dropped).
+
+**Deployed since last note** (all in dataset-latest, verified end-to-end by
+download + ToolAgent instantiation):
+- `tool_agent.py` budget clamp: `max_tokens = max(512, min(cap or 6144,
+  remaining_s * 20))` — turns can't overrun remaining wallclock.
+- Stagnation detector: ≥3 consecutive identical action batches with
+  `board_changed=False` → prompt warning (self-clearing). Targets the
+  bp35/sc25/g50t zero-level pattern of repeated no-op batches.
+- Per-level action counter: `N actions used on this level` in the state
+  line + prompt note that levels have hidden budgets (tn36's were 26-72).
+- `prompts.py`: time-remaining awareness (below ~15% → commit best plan).
+- `submit_best.py`: KNOWN_MEAN{anim-flashnext:8.21, qwen3-8-27b:4.97};
+  27B pin removed (mapped−1 resolves newest completed run).
+
+**Push queue** (auto-fires on GPU-quota reset — user reports Saturday per
+Kaggle display; quota is 30h/week shared with RSNA comp):
+1. `arc3-duck-anim-v2` — kept deliberately: its bundle is now byte-identical
+   to bundle_hybrid (coverage hint ported everywhere), so it doubles as a
+   same-code replicate for run-variance measurement.
+2. `arc3-duck-anim-flashnext` v2 — all patches on the 8.21 stack.
+3. `arc3-duck-flashnext-nvfp4-patched` — cap-only isolate (baseline).
+4. `arc3-duck-qwen3-8-27b` v3 — 27B + anim solver + all patches (Colab-
+   validated stack; expect ~5-6 on Kaggle's faster GPU).
+
+**Dead ends confirmed**: AGI-2 DSL `dsl_all` + `s_search` beam search =
+0/120 eval tasks (solves 11/150 train — eval distribution differs);
+DSL contribution to LB ~0. AGI-2 stays on perfpatch (LLM+LoRA solver,
+needs GPU — no local improvement path).
+
+**Colab notes**: run2 on A100 = mean 1.81 (concurrency=6 + budget clamp);
+Kaggle-vs-Colab gap is ~27 tok/s throughput (single A100-40GB + eager),
+not solver logic. Runtime stopped to save units; future runs on
+thatakumu@gmail.com (see ~/colab_notes.txt).
+
+**Daily submissions**: automation `auto-526f75627a274282985a5a0d8744cf63`
+ticks 00:25/08:25/16:25/22:05/23:35 UTC → push_hybrid_if_missing →
+push_pending → submit_best (≥5.5 anytime, ≥4.0 after 22:00). T4 kernels
+never submit.
