@@ -52,7 +52,7 @@ CANDIDATES = [
      "Duck Qwen3.8 Flash-Next NVFP4 MTP tuned (public25 profile)"),
     ("takumuhata/arc3-duck-flashnext-nvfp4-patched", None,
      "Duck Qwen3.8 Flash-Next NVFP4 MTP + capped-output solver patch"),
-    ("takumuhata/arc3-duck-qwen3-8-27b", 2,
+    ("takumuhata/arc3-duck-qwen3-8-27b", None,
      "TAAF duck + Qwen3.6-27B-FP8 + capped-output solver patch"),
 ]
 # Already-measured means (avoids re-downloading kernel output). Consulted
@@ -60,7 +60,8 @@ CANDIDATES = [
 # QUEUED/RUNNING so kernels_output serves that empty tree, hiding the last
 # completed run. A fresh completed run's own summary/score.json always wins.
 KNOWN_MEAN = {
-    "takumuhata/arc3-duck-qwen3-8-27b": 4.79,  # v1 run; v2 (patched agent) in flight
+    "takumuhata/arc3-duck-anim-flashnext": 8.21,  # v1 run (LB 2.60)
+    "takumuhata/arc3-duck-qwen3-8-27b": 4.97,     # v2 run (patched agent)
 }
 STRONG_MEAN = 5.5   # submit early only if a candidate clearly beats 27B (4.79)
 MIN_MEAN = 4.0      # late in the day accept anything >= this
