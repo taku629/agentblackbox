@@ -837,7 +837,10 @@ class _HarnessGameSession:
         frames = _raw_frames(new_state)
         frame_count = len(frames)
         animation = (
-            summarize_animation(frames, board_changed=board_changed)
+            # "changed" for the animation summary means a real board change:
+            # a <=4-cell diff is HUD/timer tick only, so the final board still
+            # counts as unchanged and the transient-frames hint fires.
+            summarize_animation(frames, board_changed=board_diff_cells > 4)
             if self.solver.animation_awareness
             else None
         )
