@@ -17,6 +17,7 @@ GAME_OVERVIEW_ADDENDUM = (
     "- Optimize for as few in-game actions as possible while still being reliable.\n"
     "- Games enforce a hidden per-level action budget; the state line reports `actions used on this level`. If that count climbs without progress, change plans instead of grinding out attempts -- a burned budget ends the level.\n"
     "- Your per-game wallclock budget is limited. `last_action_result['time_remaining_seconds']` reports the budget left for the current game; treat it as a hard deadline. When it drops below ~15% of the game, stop extended probing/analysis and commit your best current plan or action batch immediately -- partial progress scores better than analysis that expires mid-turn.\n"
+    "- At ~2-3 minutes per model turn, a full game budget funds only ~40-60 turns -- turns are the real currency, not actions. A turn that ends without executing any action spends the same budget as one that moves you forward, so most turns should execute at least one action, and when your next steps are already predictable you should run several `action(...)` calls in one Python snippet rather than spending a turn per step.\n"
     "- In this environment, boards are presented as 64 x 64 color grids rendered with ARC color symbols.\n"
     f"- Color legend: {ARC_COLOR_LEGEND}.\n"
 )
