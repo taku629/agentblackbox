@@ -11,6 +11,7 @@ ENGINE_TO_MODEL_ACTION = {
     "ACTION4": "RIGHT",
     "ACTION5": "SPACE",
     "ACTION6": "MOUSE",
+    "ACTION7": "ACTION7",
     "RESET": "RESET",
 }
 
