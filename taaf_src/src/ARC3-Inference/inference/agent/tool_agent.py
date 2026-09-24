@@ -40,6 +40,7 @@ from inference.utils.animation import (
     pick_animation,
     should_suggest_animation,
 )
+from inference.agent.perception_hints import build_perception_hint_lines
 from inference.agent.python_tool_sandbox import run_sandboxed_python
 from inference.agent.runtime_state import Frame, HistoryEntry, RUNTIME_STATE_FILENAME, load_runtime_state
 from inference.utils.openai_compat import build_chat_payload, build_headers
@@ -1664,6 +1665,13 @@ class ToolAgent:
                 "Maintain a compact working world model of what the current level seems to contain, what actions appear to do, what the goal seems to be, what is still uncertain, and what plan currently looks best.",
                 "Below you are provided with the current world model from the previous turn. The default behavior is to copy it and add or remove things based on the evidence that you gathered. BEFORE EXECUTING NEW ACTIONS YOU MUST ALWAYS GIVE THE REVISED VERSION OF THE WORLD MODEL.",
             ]
+        )
+        lines.extend(
+            build_perception_hint_lines(
+                current_frame,
+                _normalize_valid_actions(valid_actions),
+                self._last_action_result,
+            )
         )
         lines.append(
             "You may call `action(actions)` more than once in one Python snippet if your search or control loop needs it, "
