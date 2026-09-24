@@ -398,3 +398,32 @@ events; per-action grid diffs vs previous board with volatile masking):
   lists untried names, silent when all tried, no false fire).
 - coverage-hint verified live: fires at turn 12 with per-level action
   usage counts + MOUSE target count + untried list (unit replay).
+
+## 2026-09-24 Research findings + P3.1 adoption (commit 20789d9)
+
+- **Programmatic solvers already tried, failed**: repo's own Forge Pathfinder
+  (BFS+RL, zorojuro lineage) submitted 9/20 -> LB 0.08; OCEAN induction -> 0.14.
+  Both 25-50x below LLM agent. Public BFS recipes (zorojuro v9 etc.) top ~0.39
+  LB. Do NOT reinvest in search-on-source direction.
+- **Tufa Labs confirmed**: all top public notebooks build on their Duck/TAAF
+  harness (ours). They will NOT open-source at milestone 2 (fear of 4000-copy
+  noise). Scott Le Grand reached #38 (5.19) "on harness fixes alone" ->
+  harness-level work like ours is the validated path at our scale.
+- **True scoring rule (reverse-engineered by gedouluhui, verified vs telemetry)**:
+  level score = min(115, (baseline_actions/your_actions)^2 * 100); every action
+  incl. in-level RESET costs +1; game score = level-index-weighted mean
+  (later levels worth more); LB = unweighted game mean. Competition mode is
+  single-play -> per-game luck can't be resampled; opening-minutes hypothesis
+  quality is the dominant variable (bimodal outcomes).
+- **Adopted (commit 20789d9, all 3 datasets re-uploaded)**: perception_hints.py
+  (~120 LOC, CC0 from gedouluhui/taaf-p3-bundle) - deterministic connected-
+  component click candidates injected for MOUSE games; quadratic scoring
+  prompt line. Validated on real bp35 board (188 objects, HUD strip filtered).
+- **Their negative results (pre-registered, worth respecting)**: 64k context ->
+  throughput collapse; temp 0.6->0.3 -> exploration collapse; archetype
+  playbook -> premature commitment. Keep context 32k, temp 0.6.
+- **Community local->LB band**: local 8-16 -> LB 4-7 (ours 8.21 -> 3.98 fits).
+  Run-to-run sigma ~0.8-0.9 on 25 games; our 2.60/3.98/3.13 LB spread on same
+  code is consistent. Final ranking uses best-2 submissions -> keep daily runs.
+- **Future lever flagged by two sources**: behavioral cloning / LoRA on winning
+  transcripts (Scott Le Grand 11.04->12.97; P3.1 plans same). Needs GPU.
