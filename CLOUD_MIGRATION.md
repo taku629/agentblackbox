@@ -494,3 +494,14 @@ events; per-action grid diffs vs previous board with volatile masking):
   Ours: flash-next 8.21 local — ~5x their published baseline.
 - Their known gap (model sees no animation feedback; sb26/tn36 suffer) is
   already covered by our animation-summary hint — we're ahead on that axis.
+
+## Baseline level table (for A/B vs Saturday run)
+
+Per-game max level reached (27B | flash-next):
+ar25 2|2, bp35 2|1, cd82 2|2, cn04 2|2, dc22 2|3, ft09 4|5, g50t 1|1,
+ka59 1|2, lf52 1|2, lp85 2|6, ls20 2|2, m0r0 1|2, r11l 2|2, re86 3|3,
+s5i5 2|2, sb26 5|2, sc25 3|1, sk48 1|2, sp80 1|3, su15 2|2, tn36 1|2,
+tr87 1|2, tu93 3|4, vc33 3|4, wa30 2|2. EVERY game ends NOT_FINISHED
+(timeout) — turns are the binding constraint, so early-level speed is the
+score lever, not deep progress. Watch ar25/bp35/su15/sk48/lf52/sb26 for
+ACTION7-fix uplift; tu93/ls20 for stagnation-warning effect.
