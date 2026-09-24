@@ -461,3 +461,15 @@ events; per-action grid diffs vs previous board with volatile masking):
   builder, wa30 warehouse-agents, ls20 lock-smith, vc33 volume-control,
   lp85 loop-placement, sk48 sliding-kebab, ar25 axis-reflections...
   (full list in discussion 738294)
+
+## 2026-09-24 late2: own-run SFT extraction (LoRA prep, CPU-only)
+
+- Our winner-run artifacts contain FULL per-turn transcripts (system/user/
+  assistant+tool_call/tool-result). dev/extract_sft.py converts them into the
+  public-dataset chat-JSONL format. Verified: 0 ordering issues.
+- Yield: 17 winning games / 2398 msgs (27B run k27full) + 22 winning games /
+  3587 msgs (flash-next af_out, mean 8.21) — vs public dataset's 22 convs from
+  a ~1.25-mean model. Ours comes from a 4-6x stronger agent.
+- Files: /home/ubuntu/research/sft/sft_ours_{27b,flash}.jsonl (on box).
+  Train assistant-tokens-only when GPU returns; merge as
+  Qwen3_5ForConditionalGeneration (multimodal) + copy processor configs.
