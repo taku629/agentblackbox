@@ -474,16 +474,23 @@ events; per-action grid diffs vs previous board with volatile masking):
   Train assistant-tokens-only when GPU returns; merge as
   Qwen3_5ForConditionalGeneration (multimodal) + copy processor configs.
 
-## 2026-09-24 late3: UNDO design tension (documented, kept mapped)
+## 2026-09-24 late3: ACTION7 fix is score-enabling (VERIFIED on own transcripts)
 
-- Tufa writeup (disc 717133): UNDO is intentionally NOT offered to the model —
-  "it undoes big batches of actions that wastes energy". Our old code couldn't
-  even call it (unmapped -> rejected silently). P3.1 team shipped the label fix
-  anyway; we match them: ACTION7 stays MAPPED so a hidden game that requires it
-  is solvable; the quadratic-scoring prompt line discourages wasteful use.
-  If transcripts show the model burning undo-loops, flip to filtering ACTION7
-  out of the model-facing valid_actions list instead.
-- Tufa baseline for reference: Duck + Qwen3.6-27B public mean 1.60 ± 0.45
-  (20 tries/game). Ours: flash-next 8.21 local — ~5x their published baseline.
+- ACTION7 is a PER-GAME mechanic slot, not necessarily undo: in ar25 it is the
+  rotation action the model needs ("ACTION7 rotates it, and the goal is to
+  align the piece with the target"). Engine offers ACTION7 in valid_actions on
+  at least 6 public games (ar25, bp35, lf52, sb26, sk48, su15).
+- PRE-FIX BUG (verified): to_engine_action('ACTION7')->None made the whole
+  action batch fail normalization ("Unknown action at index N", executed:False,
+  no budget spent). Our transcripts show the model correctly diagnosed ACTION7
+  as the mechanic and tried to call it — ar25 mentions it 73x, bp35 370x,
+  su15 244x, sk48 167x across the two winner runs. Every call was rejected.
+  Keeping the map fix is likely a direct score unlock on those games.
+- Tufa deliberately hid UNDO ("model undoes big batches, wastes energy") but
+  that reasoning applies only where ACTION7==undo semantics; here it's a real
+  mechanic, so mapped is correct (P3.1 shipped the same fix). UNDO alias kept
+  as a safety net for the model writing "UNDO".
+- Tufa baseline: Duck + Qwen3.6-27B public mean 1.60 ± 0.45 (20 tries/game).
+  Ours: flash-next 8.21 local — ~5x their published baseline.
 - Their known gap (model sees no animation feedback; sb26/tn36 suffer) is
   already covered by our animation-summary hint — we're ahead on that axis.
