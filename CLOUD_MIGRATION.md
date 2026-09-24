@@ -380,3 +380,21 @@ events; per-action grid diffs vs previous board with volatile masking):
   ~1 in 5 actions produces no real board change; that's the budget the
   new signals target.
 - Replay tool: /home/ubuntu/replay_guard.py (uses deployed noop_guard.py).
+
+## 2026-09-24 — turns are the binding constraint (new prompt deployed)
+
+- Winner-run forensics: EVERY game ended NOT_FINISHED on wall-clock, and
+  analysis-turn count is ~51-57 per game REGARDLESS of actions taken
+  (wa30: 237 actions/51 turns = 4.6/turn; sb26: 30/55 = 0.55). Turn count
+  is fixed by model latency (~2.5 min/turn x ~52 ~= 130 min game budget)
+  -> per-turn action rate is what separates good games from dead ones.
+- prompts.py (x4, uploaded): new line tells the model a game budget is
+  only ~40-60 turns and inspection-only turns spend the same budget --
+  prefer >=1 action/turn and multi-action() calls when steps are
+  predictable. (batch_size=1 on all 3476 real events: the model never
+  batched before.)
+- tool_agent.py (x4, uploaded): stagnation warning now appends
+  "Valid actions outside the repeated sequence: ..." (functional tested:
+  lists untried names, silent when all tried, no false fire).
+- coverage-hint verified live: fires at turn 12 with per-level action
+  usage counts + MOUSE target count + untried list (unit replay).
