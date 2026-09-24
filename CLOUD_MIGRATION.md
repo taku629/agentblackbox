@@ -427,3 +427,12 @@ events; per-action grid diffs vs previous board with volatile masking):
   code is consistent. Final ranking uses best-2 submissions -> keep daily runs.
 - **Future lever flagged by two sources**: behavioral cloning / LoRA on winning
   transcripts (Scott Le Grand 11.04->12.97; P3.1 plans same). Needs GPU.
+
+## 2026-09-24 late: ACTION7 fix + forum intel
+
+- **ACTION7 (UNDO) was silently unusable**: action_names.py lacked the mapping
+  (forum: Duck-lineage agents hit index errors on ACTION7). Fixed + datasets
+  re-uploaded. If a hidden game offers ACTION7, v3+ kernels can now use it.
+- DeepSeek V4 Flash on RTX-6000-Pro: multiple teams report not viable
+  (quant/prune hacks, slow decode, vision broken). Not worth our effort.
+- CoTRD decoding paper exists (no scores published) - low priority.
