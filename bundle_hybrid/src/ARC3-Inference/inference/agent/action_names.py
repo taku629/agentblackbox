@@ -16,6 +16,7 @@ ENGINE_TO_MODEL_ACTION = {
 }
 
 MODEL_TO_ENGINE_ACTION = {value: key for key, value in ENGINE_TO_MODEL_ACTION.items()}
+MODEL_TO_ENGINE_ACTION["UNDO"] = "ACTION7"
 
 
 def to_model_action(name: str | None) -> str:
