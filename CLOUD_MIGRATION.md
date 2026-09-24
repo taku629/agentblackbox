@@ -473,3 +473,17 @@ events; per-action grid diffs vs previous board with volatile masking):
 - Files: /home/ubuntu/research/sft/sft_ours_{27b,flash}.jsonl (on box).
   Train assistant-tokens-only when GPU returns; merge as
   Qwen3_5ForConditionalGeneration (multimodal) + copy processor configs.
+
+## 2026-09-24 late3: UNDO design tension (documented, kept mapped)
+
+- Tufa writeup (disc 717133): UNDO is intentionally NOT offered to the model —
+  "it undoes big batches of actions that wastes energy". Our old code couldn't
+  even call it (unmapped -> rejected silently). P3.1 team shipped the label fix
+  anyway; we match them: ACTION7 stays MAPPED so a hidden game that requires it
+  is solvable; the quadratic-scoring prompt line discourages wasteful use.
+  If transcripts show the model burning undo-loops, flip to filtering ACTION7
+  out of the model-facing valid_actions list instead.
+- Tufa baseline for reference: Duck + Qwen3.6-27B public mean 1.60 ± 0.45
+  (20 tries/game). Ours: flash-next 8.21 local — ~5x their published baseline.
+- Their known gap (model sees no animation feedback; sb26/tn36 suffer) is
+  already covered by our animation-summary hint — we're ahead on that axis.
