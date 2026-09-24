@@ -338,3 +338,27 @@ never submit.
   30.56 deterministic; latest kernel output degenerate (harmless).
 - **AGI-2 DSL dead deeper**: zero candidate fns on eval (not format) —
   no hybrid attempt_2 fill possible.
+
+## 2026-09-24 — stub-LLM end-to-end verification (no GPU needed)
+
+- `arc-agi-3/dev/stub_llm.py`: minimal OpenAI-compatible stub that plays a
+  scripted action batch through the REAL `_handle_action` path. Run:
+  `python3 stub_llm.py` (serves :18080/v1), then the same harness command
+  as the ollama path with `LOCAL_ANALYZER_BASE_URL=http://127.0.0.1:18080/v1`
+  `LOCAL_ANALYZER_MODEL_ID=stub`. ~15 real actions in ~1 min.
+- Verified live on ft09 (MOUSE(3,3) x3 per turn, 5 turns):
+  `board_diff_cells` in every event; stagnation warning fires turn 3
+  ("same action sequence has repeated 3 turns"); action counter
+  "N actions used on this level" correct; animation summary revived
+  ("final board is identical ... effect only in intermediate frames");
+  NoopGuard correctly does NOT record animated actions as no-ops.
+- Local-only caveat: `inference.framework.run` default
+  minimal_diagnostics=False crashes on mp4 render without imageio[ffmpeg]
+  at run END (after games). Kaggle notebooks all pass
+  minimal_diagnostics=True/run_as_submission — verified deployed kernels
+  unaffected (movies/ + summary.txt present in arc3-duck-qwen3-8-27b
+  output).
+- Kaggle OAuth: forced refresh works; next access_token expiry 11:43 UTC
+  2026-09-24. Ticks outside the 30-min stale-grace window self-heal.
+- Dataset/git consistency re-verified: all 4 trees carry
+  _volatile_cells/masked sigs/board_diff_cells/stagnation/coverage-hint.
