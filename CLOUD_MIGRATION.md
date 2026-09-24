@@ -362,3 +362,21 @@ never submit.
   2026-09-24. Ticks outside the 30-min stale-grace window self-heal.
 - Dataset/git consistency re-verified: all 4 trees carry
   _volatile_cells/masked sigs/board_diff_cells/stagnation/coverage-hint.
+
+## 2026-09-24 — real-data replay quantification of deployed patches
+
+Replayed both winner runs' action events through the deployed NoopGuard +
+stagnation logic (exact semantics: action_display signatures incl. MOUSE
+coords; each action() call is a batch — verified batch_size=1 on all 3476
+events; per-action grid diffs vs previous board with volatile masking):
+
+- **NoopGuard**: would have blocked 11 actions (k27full run) + 2
+  (af_out run) — concrete action-budget savings, zero false positives.
+- **Stagnation detector**: would have injected 86 warnings (k27full:
+  tu93=42, ls20=20, s5i5=6...) + 62 (af_out: bp35=12, s5i5=19, su15=15,
+  sk48=9). Warnings are advisory text — whether the model heeds them is
+  only measurable on the Saturday GPU runs.
+- diff<=4 share: 285/1323 (21.5%) k27full, 446/2153 (20.7%) af_out —
+  ~1 in 5 actions produces no real board change; that's the budget the
+  new signals target.
+- Replay tool: /home/ubuntu/replay_guard.py (uses deployed noop_guard.py).
