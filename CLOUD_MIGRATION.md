@@ -436,3 +436,28 @@ events; per-action grid diffs vs previous board with volatile masking):
 - DeepSeek V4 Flash on RTX-6000-Pro: multiple teams report not viable
   (quant/prune hacks, slow decode, vision broken). Not worth our effort.
 - CoTRD decoding paper exists (no scores published) - low priority.
+
+## 2026-09-24 research round 2: hidden-set structure + failure catalogs
+
+- **Hidden eval is engine-only**: no game .py files on the box for hidden games
+  (confirmed in forum + explains Forge 0.08: find_game_source never finds them).
+  Search-on-source is IMPOSSIBLE at LB time -- direction permanently closed.
+- **Hidden set ~110 games**, ~9h, 4 waves, single-play. Two submissions count
+  for final ranking (keep daily submissions; hedge variance).
+- **STaR LoRA (manas joshi, CC0)**: winning-trajectory SFT on duck harness
+  gave 1.25 -> 1.94 LB (rank ~300 -> ~133). Public datasets:
+  arc3-sft-trajectories (chat-JSONL), arc3-duck-lora-sft (Qwen3.6 adapter),
+  duck-eval-results. Gotchas: assistant-tokens-only, flatten OpenAI tool-calls,
+  keep Qwen3_5ForConditionalGeneration multimodal merge, copy processor
+  configs. Needs GPU -- candidate for post-Saturday exploration.
+- **Fususu failure catalog (matches P3.1)**: multi-LLM roles 5x calls too slow;
+  strategy library -> premature-classification bias; concurrency >16 saturates;
+  Gemma-4-31B better vision but worse logic; manually-played training data not
+  better than self-play traces; thinking-off fast but careless.
+- **MULTIMODAL_UPSCALE=4 confirmed correct** (writeup tuned it; forks running
+  8 have no posted A/B). Our config already 4. No change.
+- Unofficial game names (Tong Hui Kang): bp35 buoyancy-puzzle, cn04 connector-
+  network, tu93 traverse-unharmed, tn36 toggle-navigation, sb26 sequence-
+  builder, wa30 warehouse-agents, ls20 lock-smith, vc33 volume-control,
+  lp85 loop-placement, sk48 sliding-kebab, ar25 axis-reflections...
+  (full list in discussion 738294)
