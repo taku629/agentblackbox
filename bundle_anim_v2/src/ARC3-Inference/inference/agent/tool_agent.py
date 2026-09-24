@@ -1465,10 +1465,19 @@ class ToolAgent:
                 break
             repeats += 1
         if repeats >= 3:
-            return (
+            line = (
                 f"Warning: the same action sequence has repeated {repeats} turns "
                 "without changing the board -- it is not working. Try a different plan."
             )
+            repeated_names = {name.split("(")[0].strip() for name in (last_sig or ())}
+            untried = [
+                name
+                for name in self._current_valid_actions
+                if name.split("(")[0].strip() not in repeated_names
+            ]
+            if untried:
+                line += " Valid actions outside the repeated sequence: " + ", ".join(untried[:8]) + "."
+            return line
         return ""
 
     def _describe_last_outcome(self, summary: dict[str, Any] | None) -> str:
