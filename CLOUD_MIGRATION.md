@@ -505,3 +505,42 @@ tr87 1|2, tu93 3|4, vc33 3|4, wa30 2|2. EVERY game ends NOT_FINISHED
 (timeout) — turns are the binding constraint, so early-level speed is the
 score lever, not deep progress. Watch ar25/bp35/su15/sk48/lf52/sb26 for
 ACTION7-fix uplift; tu93/ls20 for stagnation-warning effect.
+
+## 2026-09-25: STaR LoRA pipeline — BUILT + CPU-verified (bold pivot)
+
+Bet: improve the MODEL, not just the harness. Public pilot (manas joshi,
+CC0): LoRA r16/a32/dropout .05 on Qwen3.6-27B bf16 from 9 convs / 9116 label
+tokens → LB 1.25→1.94 (+55%). Our distilled set is ~470x larger.
+
+### Assets (all live)
+- packed_sft.jsonl: 2295 samples, 0 skipped, avg 7323 tok / 1881 label tok,
+  total 4.32M label tokens. Sources: our 8.21-run trajectories (22+17 games)
+  + public STaR convs. Validated: every sample has ≥1 user msg, ends on the
+  assistant target turn (98% with tool_calls).
+- Dataset takumuhata/taaf-duck-sft-v1 (packed_sft + train/pack/extract + tok38).
+- Dataset takumuhata/taaf-anim-27b-lora = anim-27b-patched bundle + vLLM
+  --enable-lora wiring (base served as Qwen/Qwen3.8-27B-bf16, adapter alias
+  duck-27b-lora → solver requests route to adapter via SERVED_MODEL_NAME).
+- Kernel dir sft_train/ → arc3-duck-sft-train: bf16 base (rahim3 dataset) +
+  packed_sft → PEFT adapter out to /kaggle/working/lora_adapter.
+- Kernel dir submit_ag3_lora/ → arc3-duck-anim-27b-lora: 27B eval kernel
+  serving bf16 base + adapter (datasets: taaf-anim-27b-lora, wheelhouse,
+  rahim3 bf16, taaf-duck-lora-v1). NO model_sources.
+
+### Template/label specifics (verified on real samples)
+- Qwen3.8 chat template: expects tool_call.arguments as DICT (normalize
+  OpenAI JSON-string args before templating — the public 'flatten' gotcha).
+- Template refuses prefixes with no user query; head context is cut at the
+  first '<|im_start|>user' boundary. Prefix-stable across turns.
+- Labels only on assistant segments minus '<|im_start|>assistant\n' header
+  (matches 'assistant-tokens-only' guidance from the pilot).
+- Template injects a 'Reasoning effort is set to xhigh...' preamble into the
+  system block — identical at train and serve time (vLLM uses same template).
+
+### Saturday sequence (after 01:00Z reminder → re-enable automation)
+1. push_pending pops arc3-duck-sft-train first → ~4-6h train on RTX Pro 6000.
+2. `kaggle kernels output takumuhata/arc3-duck-sft-train` → adapter files →
+   `kaggle datasets create -p <dir>` as takumuhata/taaf-duck-lora-v1.
+3. Manual push submit_ag3_lora/ (NOT in pending queue — would fail-fast on
+   missing adapter). Eval → summary.txt mean vs 8.21 baseline.
+4. If adapter regresses: no submit (best-2 keeps 3.98); if it wins: submit.

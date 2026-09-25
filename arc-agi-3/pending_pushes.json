@@ -1,4 +1,5 @@
 {
+  "takumuhata/arc3-duck-sft-train": "sft_train",
   "takumuhata/arc3-duck-anim-flashnext": "submit_ag3_hybrid",
   "takumuhata/arc3-duck-flashnext-nvfp4-patched": "submit_ag3_flashnext_patched",
   "takumuhata/arc3-duck-qwen3-8-27b": "submit_ag3_duck_patched"

@@ -1,0 +1,23 @@
+{
+ "id": "takumuhata/arc3-duck-sft-train",
+ "title": "arc3-duck-sft-train",
+ "code_file": "arc3-duck-sft-train.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": true,
+ "keywords": [
+  "gpu"
+ ],
+ "dataset_sources": [
+  "takumuhata/taaf-duck-sft-v1",
+  "rahim3/qwen3-8-27b-bf16"
+ ],
+ "kernel_sources": [],
+ "competition_sources": [],
+ "model_sources": [],
+ "docker_image": "gcr.io/kaggle-private-byod/python@sha256:57e612b484cf3df5026ee4dcc3cb176974b22b2bc0937fb1e16132a8be4cb13c",
+ "machine_shape": "NvidiaRtxPro6000"
+}
