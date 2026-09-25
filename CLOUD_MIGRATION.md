@@ -570,3 +570,28 @@ unsloth LoRA + turbo_dfs beam search + train-time aug (n=16) + eval-time aug
 (n=2) + NLL re-rank — unrelated to the DSL battery. AGI-2 improvements are
 GPU-gated (aug/DFS budget tuning needs quota); deprioritized behind the
 AGI-3 LoRA bet.
+
+## 2026-09-25c: PAUSED (user needs GPU quota for another job)
+
+- Main automation auto-526f75627a274282985a5a0d8744cf63 DISABLED — no
+  submits/pushes until the user asks to resume (was first paused for Sep 25,
+  then the Sep-26 09:00JST revival reminder was deleted at user request
+  because the Sep-26 morning GPU quota is reserved for their other job).
+- resume = re-enable automation + run push_pending (order unchanged:
+  sft-train first), then sat_lora_pipeline.sh once the adapter is out.
+
+### Training-time budget fix (train_lora.py + sft_train nb updated, dataset v4)
+- Measured real tokens: packed_sft = ~27.9M input tok/epoch (mean 7294,
+  p90 hits 8192 cap), ~7.25M label tok. At ~200-300 tok/s on RTX PRO 6000
+  that is ~25-40h/epoch — blows the 30h/wk quota AND the kernel cap.
+- Kernel now runs EPOCHS=1 + SUBSAMPLE=1200 (~8.7M tok, ~8-12h est).
+  train_lora.py takes SUBSAMPLE env (deterministic seed-1234 pick of packed
+  lines, sub-sampled before encoding to save the O(n^2) render cost too).
+- Bug fixes in train_lora.py: grad-ckpt now owned by Trainer
+  (gradient_checkpointing=True + use_reentrant=False) and peft wrap happens
+  first — the old order never enabled input grads (element-0-no-grad crash).
+  enable_input_require_grads called explicitly; use_cache=False applied to
+  both config and config.text_config; save_strategy=steps every ~quarter
+  epoch (keep 2) so a timeout still leaves a usable adapter checkpoint;
+  warns if any LoRA target lands on vision modules; remove_unused_columns
+  off (PEFT forward signature introspection can drop needed cols).

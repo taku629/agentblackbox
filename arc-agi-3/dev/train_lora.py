@@ -15,9 +15,11 @@ Env vars:
   EPOCHS          default 3
   LR              default 1e-4
   MAX_LEN         default 8192
+  SUBSAMPLE       default 0 (all); N>0 takes N random lines (seed 1234) before
+                  encoding — use to fit the GPU-kernel time/quota budget
   SAVE_MERGED_DIR optional — if set, merge adapter into bf16 and save full model
 """
-import json, os, sys
+import json, math, os, sys
 from transformers import AutoTokenizer
 
 BASE = os.environ["BASE_MODEL"]
@@ -26,6 +28,9 @@ OUT = os.environ.get("OUT_DIR", "/kaggle/working/lora_out")
 EPOCHS = float(os.environ.get("EPOCHS", "3"))
 LR = float(os.environ.get("LR", "1e-4"))
 MAX_LEN = int(os.environ.get("MAX_LEN", "8192"))
+# deterministic subsample of packed_sft lines (0 = all). ~7.3k tokens/sample,
+# so N=1200 -> ~9M train tokens -> ~8-12h at 200-300 tok/s on RTX PRO 6000
+SUBSAMPLE = int(os.environ.get("SUBSAMPLE", "0"))
 
 tok = AutoTokenizer.from_pretrained(BASE)
 
@@ -87,9 +92,15 @@ def encode_sample(msgs):
 
 def load_ds():
     from datasets import Dataset
+    import random
+    lines = open(SFT).read().splitlines()
+    if SUBSAMPLE and SUBSAMPLE < len(lines):
+        lines = random.Random(1234).sample(lines, SUBSAMPLE)
+        print(f"subsampled {len(lines)} of packed lines")
     rows = []
     skipped = 0
-    for line in open(SFT):
+    total_tok = 0
+    for line in lines:
         c = json.loads(line)
         msgs = c["messages"]
         try:
@@ -101,7 +112,9 @@ def load_ds():
             skipped += 1
             continue
         rows.append(enc)
-    print(f"dataset: {len(rows)} samples ({skipped} skipped)")
+        total_tok += len(enc["input_ids"])
+    print(f"dataset: {len(rows)} samples ({skipped} skipped), "
+          f"~{total_tok/1e6:.1f}M train tokens")
     return Dataset.from_list(rows)
 
 def collate(feats):
@@ -142,16 +155,28 @@ def main():
     from peft import LoraConfig, get_peft_model
     ds = load_ds()
     model = load_model()
-    model.config.use_cache = False
-    model.gradient_checkpointing_enable()
     cfg = LoraConfig(
         r=16, lora_alpha=32, lora_dropout=0.05, bias="none",
         task_type="CAUSAL_LM",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
     )
+    # wrap BEFORE enabling grad ckpt so PeftModel's implementation also calls
+    # enable_input_require_grads (needed for LoRA grads through a frozen base)
     model = get_peft_model(model, cfg)
     model.print_trainable_parameters()
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    vision = [n for n, p in model.named_parameters()
+              if p.requires_grad and ("visual" in n or "vision" in n)]
+    if vision:
+        print("WARNING: LoRA matched vision modules:", len(vision))
+    for c in (model.config, getattr(model.config, "text_config", None)):
+        if c is not None and hasattr(c, "use_cache"):
+            c.use_cache = False
+    steps_per_epoch = max(1, math.ceil(len(ds) / 8))
+    save_steps = max(20, steps_per_epoch // 4)
+    print(f"steps/epoch {steps_per_epoch}, adapter ckpt every {save_steps}")
     args = TrainingArguments(
         output_dir=OUT,
         per_device_train_batch_size=1,
@@ -161,12 +186,17 @@ def main():
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
         logging_steps=10,
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=save_steps,
+        save_total_limit=2,
         bf16=True,
         report_to=[],
         optim="adamw_torch_fused",
         max_grad_norm=1.0,
         dataloader_num_workers=2,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        remove_unused_columns=False,
     )
     trainer = Trainer(model=model, args=args, train_dataset=ds,
                       data_collator=collate)
