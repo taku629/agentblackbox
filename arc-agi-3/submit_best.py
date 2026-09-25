@@ -52,6 +52,8 @@ CANDIDATES = [
      "Duck Qwen3.8 Flash-Next NVFP4 MTP + capped-output solver patch"),
     ("takumuhata/arc3-duck-qwen3-8-27b", None,
      "TAAF duck + Qwen3.6-27B-FP8 + capped-output solver patch"),
+    ("takumuhata/arc3-duck-anim-27b-lora", None,
+     "TAAF duck + Qwen3.8-27B-bf16 + STaR LoRA adapter (duck-27b-lora)"),
 ]
 # Already-measured means (avoids re-downloading kernel output). Consulted
 # ONLY when the live download yields nothing -- e.g. a newer kernel version is

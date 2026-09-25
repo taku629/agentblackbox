@@ -23,5 +23,17 @@ META
 "$K" datasets create -p "$AD"
 
 echo "== 3/3 pushing LoRA eval kernel arc3-duck-anim-27b-lora =="
-"$K" kernels push -p submit_ag3_lora
+push_out=$("$K" kernels push -p submit_ag3_lora 2>&1)
+echo "$push_out"
+ver=$(echo "$push_out" | grep -oE 'Kernel version [0-9]+' | grep -oE '[0-9]+' || true)
+if [ -n "$ver" ]; then
+  python3 - <<PY
+import json
+p = "arc-agi-3/kernel_versions.json"
+m = json.load(open(p)) if __import__("os").path.exists(p) else {}
+m["takumuhata/arc3-duck-anim-27b-lora"] = $ver
+json.dump(m, open(p, "w"), indent=2)
+print("kernel_versions.json updated:", m)
+PY
+fi
 echo "done — watch: $K kernels status takumuhata/arc3-duck-anim-27b-lora"
