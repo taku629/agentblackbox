@@ -544,3 +544,14 @@ tokens → LB 1.25→1.94 (+55%). Our distilled set is ~470x larger.
 3. Manual push submit_ag3_lora/ (NOT in pending queue — would fail-fast on
    missing adapter). Eval → summary.txt mean vs 8.21 baseline.
 4. If adapter regresses: no submit (best-2 keeps 3.98); if it wins: submit.
+- One-shot helper: `arc-agi-3/sat_lora_pipeline.sh` runs steps 2+3 above
+  (adapter fetch → dataset create → lora kernel push) once the train kernel
+  finishes. Run it manually after checking train output quality.
+- Note: packed_sft samples are text-only while prod turns include the grid
+  image — same text-only regime as the published pilot (worked: +55%).
+  Adapter teaches action style/tool format on language layers; the vision
+  tower stays frozen.
+- rahim3/qwen3-8-27b-bf16 has tokenizer+vocab+merges+preprocessor configs
+  (multimodal) but no separate chat_template.jinja — vLLM uses the embedded
+  template in tokenizer_config.json (same as serve-time behavior).
+- vLLM cmd now pins --max-lora-rank 16 (adapter is r=16, default ceiling).
