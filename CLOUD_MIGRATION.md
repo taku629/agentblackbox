@@ -557,3 +557,16 @@ tokens → LB 1.25→1.94 (+55%). Our distilled set is ~470x larger.
   (multimodal) but no separate chat_template.jinja — vLLM uses the embedded
   template in tokenizer_config.json (same as serve-time behavior).
 - vLLM cmd now pins --max-lora-rank 16 (adapter is r=16, default ceiling).
+
+## 2026-09-25b: AGI-2 eval 0/120 resolved (non-production)
+
+eval_local.py's 0/120 on the eval set was NOT a production bug: it measures
+the dev-side dsl_all.py battery (38 fixed-pattern solvers). All 38 return
+None on eval tasks (no pattern fits) vs 11/150 on train — the eval set is
+designed so memorized transforms fail; a fixed battery scoring ~0 there is
+expected. Production AGI-2 kernel (arc-agi2-lb33-perfpatch, LB 30.56) is an
+AIMO-style stack instead: sorokin/qwen3_4b_grids15_sft139 (4B Qwen3 SFT) +
+unsloth LoRA + turbo_dfs beam search + train-time aug (n=16) + eval-time aug
+(n=2) + NLL re-rank — unrelated to the DSL battery. AGI-2 improvements are
+GPU-gated (aug/DFS budget tuning needs quota); deprioritized behind the
+AGI-3 LoRA bet.
