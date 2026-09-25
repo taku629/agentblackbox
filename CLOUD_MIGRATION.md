@@ -513,9 +513,11 @@ CC0): LoRA r16/a32/dropout .05 on Qwen3.6-27B bf16 from 9 convs / 9116 label
 tokens → LB 1.25→1.94 (+55%). Our distilled set is ~470x larger.
 
 ### Assets (all live)
-- packed_sft.jsonl: 2295 samples, 0 skipped, avg 7323 tok / 1881 label tok,
-  total 4.32M label tokens. Sources: our 8.21-run trajectories (22+17 games)
-  + public STaR convs. Validated: every sample has ≥1 user msg, ends on the
+- packed_sft.jsonl: 3823 samples, 0 skipped, avg 7277 tok / 1949 label tok,
+  total 7.45M label tokens. Sources: FOUR own runs (af_out 22g/3588msg,
+  k27full 17g/2398msg, k27v2 17g/2250msg, nvfp4_out 16g/2604msg — distinct
+  trajectories of the same games = more diverse action patterns)
+  + public STaR convs. ~800x the public pilot's 9116 label tokens. Validated: every sample has ≥1 user msg, ends on the
   assistant target turn (98% with tool_calls).
 - Dataset takumuhata/taaf-duck-sft-v1 (packed_sft + train/pack/extract + tok38).
 - Dataset takumuhata/taaf-anim-27b-lora = anim-27b-patched bundle + vLLM
