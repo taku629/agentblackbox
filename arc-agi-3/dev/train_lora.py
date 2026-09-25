@@ -119,15 +119,29 @@ def collate(feats):
             "labels": torch.tensor(labels),
             "attention_mask": torch.tensor(attn)}
 
+def load_model():
+    """bf16 base is a *ForConditionalGeneration (multimodal) checkpoint —
+    ImageTextToText is the canonical loader; fall back to CausalLM."""
+    import torch
+    try:
+        from transformers import AutoModelForImageTextToText
+        return AutoModelForImageTextToText.from_pretrained(
+            BASE, dtype=torch.bfloat16, device_map="auto",
+            attn_implementation="sdpa")
+    except Exception as e:
+        print("ImageTextToText load failed:", type(e).__name__, e)
+        from transformers import AutoModelForCausalLM
+        return AutoModelForCausalLM.from_pretrained(
+            BASE, dtype=torch.bfloat16, device_map="auto",
+            attn_implementation="sdpa")
+
+
 def main():
     import torch
-    from transformers import (AutoModelForCausalLM, Trainer, TrainingArguments)
+    from transformers import Trainer, TrainingArguments
     from peft import LoraConfig, get_peft_model
     ds = load_ds()
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE, dtype=torch.bfloat16, device_map="auto",
-        attn_implementation="sdpa",
-    )
+    model = load_model()
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
     cfg = LoraConfig(
