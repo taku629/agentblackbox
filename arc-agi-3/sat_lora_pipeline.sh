@@ -28,6 +28,21 @@ else
 fi
 test -f "$AD/adapter_model.safetensors" || { echo "adapter weights missing in $AD"; ls -la "$AD"; exit 1; }
 
+# sanity: adapter_config parses and the safetensors header holds LoRA keys —
+# catches a corrupt/partial download before we burn a GPU eval run on it
+python3 - "$AD" <<'PY'
+import json, struct, sys
+ad = sys.argv[1]
+cfg = json.load(open(f"{ad}/adapter_config.json"))
+assert cfg.get("r") == 16, f"unexpected r: {cfg.get('r')}"
+raw = open(f"{ad}/adapter_model.safetensors", "rb")
+hlen = struct.unpack("<Q", raw.read(8))[0]
+hdr = json.loads(raw.read(hlen))
+lora = [k for k in hdr if "lora_" in k]
+assert lora, "no lora_* tensors in adapter_model.safetensors"
+print(f"adapter ok: r={cfg['r']}, {len(lora)} lora tensors, {len(hdr)} total")
+PY
+
 echo "== 2/3 upserting dataset takumuhata/taaf-duck-lora-v1 =="
 cat > "$AD/dataset-metadata.json" <<'META'
 {"title":"taaf-duck-lora-v1","id":"takumuhata/taaf-duck-lora-v1","licenses":[{"name":"other"}]}
