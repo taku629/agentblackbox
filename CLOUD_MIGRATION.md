@@ -595,3 +595,16 @@ AGI-3 LoRA bet.
   epoch (keep 2) so a timeout still leaves a usable adapter checkpoint;
   warns if any LoRA target lands on vision modules; remove_unused_columns
   off (PEFT forward signature introspection can drop needed cols).
+
+### Resume-time quota math (30h/wk budget)
+- sft-train ~8-12h (SUBSAMPLE=1200) -> lora eval ~5-8h = ~13-20h for the
+  LoRA bet. Remaining ~10-17h fits ~2 of the 3 queued eval kernels
+  (anim-flashnext v2, flashnext-patched, 27B-patched) — if quota runs short,
+  drop 27B-patched first (the lora eval already covers a 27B run).
+- sat_lora_pipeline.sh hardened: falls back to newest checkpoint-N adapter
+  if the train kernel times out (mid-run ckpts every ~quarter epoch), and
+  auto-switches datasets create->version on reruns.
+- Verified end-to-end on CPU: SUBSAMPLE env (40-line pick -> 0.3M tok),
+  kernel metadata has all 4 dataset_sources incl. taaf-duck-lora-v1,
+  vLLM wiring: --enable-lora --max-lora-rank 16 --lora-modules
+  duck-27b-lora=<LORA_PATH>, LOCAL_ANALYZER_MODEL_ID=duck-27b-lora.

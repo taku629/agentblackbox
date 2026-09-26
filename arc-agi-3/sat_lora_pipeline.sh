@@ -12,15 +12,31 @@ echo "== 1/3 fetching adapter from arc3-duck-sft-train =="
 rm -rf "$OUT" && mkdir -p "$OUT"
 "$K" kernels output takumuhata/arc3-duck-sft-train -p "$OUT"
 ls -la "$OUT"
-# adapter may land at root or under lora_adapter/
-if [ -d "$OUT/lora_adapter" ]; then AD="$OUT/lora_adapter"; else AD="$OUT"; fi
-test -f "$AD/adapter_config.json" || { echo "adapter_config.json missing in $AD"; find "$OUT" -name adapter_config.json; exit 1; }
+# adapter lands at lora_adapter/ root on success; if the kernel timed out,
+# fall back to the newest Trainer checkpoint (still a usable adapter)
+if [ -f "$OUT/lora_adapter/adapter_config.json" ]; then
+  AD="$OUT/lora_adapter"
+elif [ -f "$OUT/adapter_config.json" ]; then
+  AD="$OUT"
+else
+  last_ckpt=$(ls -d "$OUT"/checkpoint-* "$OUT"/lora_adapter/checkpoint-* 2>/dev/null | sort -t- -k2 -n | tail -1 || true)
+  if [ -n "$last_ckpt" ] && [ -f "$last_ckpt/adapter_config.json" ]; then
+    AD="$last_ckpt"; echo "kernel timed out — using checkpoint adapter: $last_ckpt"
+  else
+    echo "no adapter found"; find "$OUT" -name adapter_config.json; exit 1
+  fi
+fi
+test -f "$AD/adapter_model.safetensors" || { echo "adapter weights missing in $AD"; ls -la "$AD"; exit 1; }
 
-echo "== 2/3 creating dataset takumuhata/taaf-duck-lora-v1 =="
+echo "== 2/3 upserting dataset takumuhata/taaf-duck-lora-v1 =="
 cat > "$AD/dataset-metadata.json" <<'META'
 {"title":"taaf-duck-lora-v1","id":"takumuhata/taaf-duck-lora-v1","licenses":[{"name":"other"}]}
 META
-"$K" datasets create -p "$AD"
+if "$K" datasets status takumuhata/taaf-duck-lora-v1 >/dev/null 2>&1; then
+  "$K" datasets version -p "$AD" -m "adapter update"
+else
+  "$K" datasets create -p "$AD"
+fi
 
 echo "== 3/3 pushing LoRA eval kernel arc3-duck-anim-27b-lora =="
 push_out=$("$K" kernels push -p submit_ag3_lora 2>&1)
