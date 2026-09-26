@@ -608,3 +608,25 @@ AGI-3 LoRA bet.
   kernel metadata has all 4 dataset_sources incl. taaf-duck-lora-v1,
   vLLM wiring: --enable-lora --max-lora-rank 16 --lora-modules
   duck-27b-lora=<LORA_PATH>, LOCAL_ANALYZER_MODEL_ID=duck-27b-lora.
+
+### vLLM-LoRA serving risk assessment (checked v0.19.0 source)
+- CONFIRMED: Qwen3_5ForConditionalGeneration is in the 0.19 model registry
+  (qwen3_5.py), inherits Qwen3VLForConditionalGeneration which implements
+  SupportsLoRA, and uses _mark_language_model so LoRA applies to the LM
+  tower only — exactly where our targets land (vision modules use fused
+  qkv names and are untouched).
+- Known-era bug (vllm#28640, v0.11/0.12): lora_shrink assert when adapter
+  contains vision params or DS-Z3/FSDP-sharded 1-D tensors — neither
+  applies to our PEFT-Trainer export; also reportedly fixed in later
+  releases. Residual risk remains (first real check is eval-kernel boot).
+- Qwen3_5 is IsHybrid (linear-attn + full-attn mix): our targets only hit
+  full-attn + MLP projections — partial coverage is expected and fine.
+- FALLBACK if --enable-lora fails at serve time: merge adapter into base
+  inside the eval kernel before vllm starts (transformers+peft already in
+  wheelhouse): load base bf16 + adapter, merge_and_unload, save to
+  /kaggle/working/merged27b (~54GB — check scratch disk; else merge
+  shard-by-shard streaming), serve that dir with the same cmd minus
+  --enable-lora/--lora-modules and SERVED_MODEL_NAME unchanged.
+  train_lora.py already supports SAVE_MERGED_DIR for an in-kernel merge,
+  but the merged 54GB exceeds the kernels-output download path — prefer
+  merge-inside-eval-kernel.
