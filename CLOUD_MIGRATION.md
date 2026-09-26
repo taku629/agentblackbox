@@ -651,3 +651,11 @@ AGI-3 LoRA bet.
   (was 22:1 skew su15:279 vs k008:13). Dataset taaf-duck-sft-v1 v5.
 - Official tech report confirms 5x human-baseline action cap per level —
   aligns with the (baseline/yours)^2 prompt already deployed.
+- Pilot adapter structure (deeper): self_attn q/k/v/o on only 16 of 64
+  layers + mlp gate/up/down on all 64 — Qwen3.5 is hybrid; linear-attn
+  layers have no q/k/v/o names, so our identical target list lands the
+  same way automatically. 256 lora pairs, dims verified compatible.
+- Plan-B merge script: arc-agi-3/dev/merge_lora_stream.py — streams base
+  shards + adapter, suffix-matches on `layers.N.<mod>.weight` (tolerates
+  both VL `model.language_model.layers` and text `model.layers` nesting),
+  verified key-parsing against the real pilot adapter (256/256 resolve).
