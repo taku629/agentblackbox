@@ -95,8 +95,25 @@ def load_ds():
     import random
     lines = open(SFT).read().splitlines()
     if SUBSAMPLE and SUBSAMPLE < len(lines):
-        lines = random.Random(1234).sample(lines, SUBSAMPLE)
-        print(f"subsampled {len(lines)} of packed lines")
+        # stratified pick by game: floor(N/ngames) each, remainder proportional —
+        # a plain random pick would starve tail games (22:1 skew, 279 vs 13)
+        rng = random.Random(1234)
+        by_game = {}
+        for line in lines:
+            by_game.setdefault(json.loads(line).get("game", "?"), []).append(line)
+        ng = len(by_game)
+        floor = SUBSAMPLE // ng
+        picked, leftover = [], []
+        for g, gl in sorted(by_game.items()):
+            rng.shuffle(gl)
+            picked += gl[:floor]
+            leftover += gl[floor:]
+        rng.shuffle(leftover)
+        picked += leftover[: SUBSAMPLE - len(picked)]
+        rng.shuffle(picked)
+        lines = picked
+        print(f"subsampled {len(lines)} of packed lines "
+              f"(stratified over {ng} games, floor {floor}/game)")
     rows = []
     skipped = 0
     total_tok = 0

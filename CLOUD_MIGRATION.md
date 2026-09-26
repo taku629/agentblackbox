@@ -630,3 +630,24 @@ AGI-3 LoRA bet.
   train_lora.py already supports SAVE_MERGED_DIR for an in-kernel merge,
   but the merged 54GB exceeds the kernels-output download path — prefer
   merge-inside-eval-kernel.
+
+### Pilot-adapter forensics (justforgags/arc3-duck-lora-sft, inspected)
+- Spec identical to ours (r16/a32/7 targets/3ep/1e-4); trained on
+  vrfai/Qwen3.6-27B-FP8 — layer geometry MATCHES our bf16 27B exactly
+  (64 layers, h5120, mlp 17408; naming difference is community naming,
+  same qwen3_5 arch). train_loss 0.36 on 9 convs / 9116 label tokens.
+- KEY MISMATCH caveat: pilot adapter keys are `base_model.model.model.
+  layers.N.*` (text-only repack); ours will be `base_model.model.
+  language_model.layers.N.*` (VL checkpoint). vLLM 0.19 strips
+  'base_model.model.' and matches against its own module tree —
+  our naming is the expected VL path (same layout as the Qwen3-VL-8B
+  case confirmed working in vllm#31278). The PILOT adapter as a fallback
+  would need a key rename (insert 'language_model.') before use.
+- Tokenizer note: pilot ships chat_template.jinja separately; our base
+  embeds the template in tokenizer_config.json — vLLM reads the served
+  (base) model's tokenizer either way; adapter tokenizer files inert.
+- Stratified SUBSAMPLE now in train_lora.py (floor N/ngames + proportional
+  remainder, seed 1234) — 1200-sample pick gives every game >=13 samples
+  (was 22:1 skew su15:279 vs k008:13). Dataset taaf-duck-sft-v1 v5.
+- Official tech report confirms 5x human-baseline action cap per level —
+  aligns with the (baseline/yours)^2 prompt already deployed.
