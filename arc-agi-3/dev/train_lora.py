@@ -31,6 +31,9 @@ MAX_LEN = int(os.environ.get("MAX_LEN", "8192"))
 # deterministic subsample of packed_sft lines (0 = all). ~7.3k tokens/sample,
 # so N=1200 -> ~9M train tokens -> ~8-12h at 200-300 tok/s on RTX PRO 6000
 SUBSAMPLE = int(os.environ.get("SUBSAMPLE", "0"))
+# QLORA=1 loads the base in 4-bit NF4 (bitsandbytes) instead of bf16 —
+# fits 27B on a 40GB Colab A100 (bf16 needs ~54GB)
+QLORA = os.environ.get("QLORA") == "1"
 
 tok = AutoTokenizer.from_pretrained(BASE)
 
@@ -153,17 +156,24 @@ def load_model():
     """bf16 base is a *ForConditionalGeneration (multimodal) checkpoint —
     ImageTextToText is the canonical loader; fall back to CausalLM."""
     import torch
+    kw = {"device_map": "auto", "attn_implementation": "sdpa"}
+    if QLORA:
+        from transformers import BitsAndBytesConfig
+        kw["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+    else:
+        kw["dtype"] = torch.bfloat16
     try:
         from transformers import AutoModelForImageTextToText
-        return AutoModelForImageTextToText.from_pretrained(
-            BASE, dtype=torch.bfloat16, device_map="auto",
-            attn_implementation="sdpa")
+        return AutoModelForImageTextToText.from_pretrained(BASE, **kw)
     except Exception as e:
         print("ImageTextToText load failed:", type(e).__name__, e)
         from transformers import AutoModelForCausalLM
-        return AutoModelForCausalLM.from_pretrained(
-            BASE, dtype=torch.bfloat16, device_map="auto",
-            attn_implementation="sdpa")
+        return AutoModelForCausalLM.from_pretrained(BASE, **kw)
 
 
 def main():
@@ -172,6 +182,9 @@ def main():
     from peft import LoraConfig, get_peft_model
     ds = load_ds()
     model = load_model()
+    if QLORA:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(model)
     cfg = LoraConfig(
         r=16, lora_alpha=32, lora_dropout=0.05, bias="none",
         task_type="CAUSAL_LM",
