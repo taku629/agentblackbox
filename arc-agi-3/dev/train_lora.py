@@ -207,7 +207,9 @@ def main():
     steps_per_epoch = max(1, math.ceil(len(ds) / 8))
     save_steps = max(20, steps_per_epoch // 4)
     print(f"steps/epoch {steps_per_epoch}, adapter ckpt every {save_steps}")
-    args = TrainingArguments(
+    import inspect
+    accepted = set(inspect.signature(TrainingArguments.__init__).parameters)
+    kw = dict(
         output_dir=OUT,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=8,
@@ -228,6 +230,10 @@ def main():
         gradient_checkpointing_kwargs={"use_reentrant": False},
         remove_unused_columns=False,
     )
+    dropped = sorted(k for k in kw if k not in accepted)
+    if dropped:
+        print("TrainingArguments unsupported kwargs dropped:", dropped)
+    args = TrainingArguments(**{k: v for k, v in kw.items() if k in accepted})
     trainer = Trainer(model=model, args=args, train_dataset=ds,
                       data_collator=collate)
     trainer.train()
