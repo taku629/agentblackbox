@@ -659,3 +659,17 @@ AGI-3 LoRA bet.
   shards + adapter, suffix-matches on `layers.N.<mod>.weight` (tolerates
   both VL `model.language_model.layers` and text `model.layers` nesting),
   verified key-parsing against the real pilot adapter (256/256 resolve).
+
+## 2026-09-26: Colab QLoRA path (user has Google AI Pro / Gemini Colab access)
+
+- `sft_train/colab_qlora_train.ipynb` — self-contained Colab notebook:
+  creds upload -> kaggle datasets download (base 44GB + sft) -> QLORA=1
+  train -> adapter upload to takumuhata/taaf-duck-lora-v1. Needs an
+  A100-40GB runtime (~3-4h for SUBSAMPLE=1200; L4-24GB likely OOMs at
+  seq 8192 from the 248k-vocab logits — MAX_LEN=4096 is the fallback).
+- train_lora.py gained QLORA env: BitsAndBytesConfig nf4 + double-quant +
+  bf16 compute, peft.prepare_model_for_kbit_training. bf16 path unchanged
+  (Kaggle RTX6000 remains the reference run if quota frees first).
+- This DECOUPLES the scarce resource: Colab trains the adapter while
+  Kaggle GPU stays free for the user's other job; only the ~7h eval
+  kernel still needs Kaggle quota.
