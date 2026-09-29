@@ -43,6 +43,10 @@ def resolve_kaggle_dataset_path(owner: str, slug: str) -> Path:
 
 MODEL_PATH = resolve_kaggle_dataset_path(MODEL_OWNER, MODEL_SLUG)
 LORA_PATH = resolve_kaggle_dataset_path('takumuhata', 'taaf-duck-lora-v1')
+# Merged-model mode: set MERGED_MODEL_PATH to serve a pre-merged bf16 model
+# (proper QLoRA merge) instead of base + --enable-lora. Correctness check for
+# the adapter — bf16+adapter serving is the mismatched path for a QLoRA adapter.
+MERGED_MODEL_PATH = os.getenv('MERGED_MODEL_PATH', '').strip()
 
 
 def vllm_env() -> dict:
@@ -96,14 +100,23 @@ def start_vllm_server() -> None:
     VLLM_SERVER_LOG.parent.mkdir(parents=True, exist_ok=True)
     VLLM_SERVER_PID.unlink(missing_ok=True)
     log_handle = VLLM_SERVER_LOG.open('w', encoding='utf-8')
+    model_arg = MERGED_MODEL_PATH if MERGED_MODEL_PATH else str(MODEL_PATH)
     cmd = [
         sys.executable,
         '-m', 'vllm.entrypoints.openai.api_server',
-        '--model', str(MODEL_PATH),
-        '--served-model-name', 'Qwen/Qwen3.8-27B-bf16',
-        '--enable-lora',
-        '--max-lora-rank', '16',
-        '--lora-modules', SERVED_MODEL_NAME + '=' + str(LORA_PATH),
+        '--model', model_arg,
+        # merged mode serves the merged weights under the LoRA alias —
+        # the harness calls SERVED_MODEL_NAME in both modes
+        '--served-model-name',
+        SERVED_MODEL_NAME if MERGED_MODEL_PATH else 'Qwen/Qwen3.8-27B-bf16',
+    ]
+    if not MERGED_MODEL_PATH:
+        cmd += [
+            '--enable-lora',
+            '--max-lora-rank', '16',
+            '--lora-modules', SERVED_MODEL_NAME + '=' + str(LORA_PATH),
+        ]
+    cmd += [
         '--host', VLLM_HOST,
         '--port', str(VLLM_PORT),
         '--tensor-parallel-size', str(VLLM_TENSOR_PARALLEL_SIZE),

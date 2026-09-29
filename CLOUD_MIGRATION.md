@@ -766,3 +766,24 @@ AGI-3 LoRA bet.
   is the clean retry when GPU quota frees. Result saved:
   /content/lora_eval_result.json on the runtime; transcripts in
   /content/working/transcripts/.
+
+## 2026-09-30: LoRA eval root-cause narrowed — adapter degraded the model (env verified identical)
+
+- Verified deps dataset env files carry the SAME instance IDs as the official
+  eval (ft09-0d8bbf25, vc33-5430563c, ...) — apples-to-apples confirmed.
+- Un-adapted 27B on identical 25g eval (k27v2) = **4.97**; anim-flash = 1.81;
+  base+QLoRA-adapter = **1.669**. If the adapter had failed to bind, we'd
+  reproduce ~4.97 — instead it actively cut score 3x. Per-game: ft09 14.29
+  (vs base 47.6), lp85 2.78 (vs 16.7), ar25 0 (vs 8.3); wins only vc33/cn04.
+- Adapter forensics: deltas ~2-3x pilot norm (med 0.3 vs 0.1) — consistent
+  with absorbing NF4 quant corrections (QLoRA mismatch theory).
+- Leading explanation: NF4-trained deltas applied to bf16 weights over-
+  correct. Underfit (1ep/1200 samples, loss plateau ~0.58) is the fallback.
+- NEXT experiment prepared: `submit_ag3_lora/colab_merged_eval.ipynb`
+  (make_merged_eval_nb.py + merge_setup.py + MERGED_MODEL_PATH mode in
+  colab_eval_setup.py). Proper QLoRA merge = dequantize NF4 base + add deltas
+  -> /content/merged_27b bf16 -> serve under duck-27b-lora. 7 signal games
+  (subset of both prior evals), ~2h total incl. 44GB re-download.
+  Verdict: merged-mean recovers toward ~5 -> adapter fine, ship merged model
+  (Kaggle, no --enable-lora); stays ~1.7 -> adapter bad, retrain bf16.
+  Runtime currently dead — needs a fresh Colab A100-80GB when user resumes.
