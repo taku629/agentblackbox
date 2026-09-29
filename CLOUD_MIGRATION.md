@@ -702,3 +702,21 @@ AGI-3 LoRA bet.
 - Alternative future eval path: run the same eval on the Colab A100 (saves
   Kaggle quota) — needs the eval notebook + datasets ported; the harness
   itself is engine-only so it should work, unverified.
+
+## 2026-09-28 (later): LoRA eval ported to Colab (Kaggle quota stays free)
+
+- New: `submit_ag3_lora/colab_lora_eval.ipynb` + `colab_eval_setup.py` +
+  `make_eval_nb.py` (regenerate the notebook after editing the setup script).
+- New private dataset `takumuhata/taaf-colab-deps-v1` = arcengine/arc_agi site-packages
+  + `environment_files/` (25 public game env dirs, nested zips inside the dataset zip).
+- Colab notebook flow: pip vllm==0.19.0 (PyPI, not the H100 wheelhouse) →
+  KAGGLE_CREDENTIALS secret → stream-download bundle/adapter/model/deps →
+  vLLM `--enable-lora` server (same flags as Kaggle kernel) → patch
+  `arcade_spec.environments_dir` → `bm.run()` 25 games ×1 pass → mean from
+  `working/benchmark.json` game_runs final_score, saved to
+  `/content/lora_eval_result.json`.
+- Auth: datasets downloaded via `Authorization: Bearer <access_token>` streaming
+  (credentials.json is OAuth-style, NOT basic-auth key). On 401 the notebook runs
+  `kaggle datasets list -m` which auto-refreshes the token on disk, then retries.
+- Needs A100 80GB (54GB weights). Verified mean >8.21 ⇒ submission candidate —
+  but submitting still needs Kaggle GPU + user resume.
