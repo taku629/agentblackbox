@@ -750,3 +750,19 @@ AGI-3 LoRA bet.
   commands in a CODE CELL or upload a .sh script instead; Ctrl+F10 doesn't
   reach Colab, use the cell play buttons / Ctrl+Enter inside a focused cell.
 - make_eval_nb.py updated with all of the above; bfdcbdb..616241a pushed.
+
+## 2026-09-29 (later): Colab LoRA eval COMPLETE — mean 1.669, NOT a candidate
+
+- colab_lora_eval.ipynb ran clean on A100-80GB: 25 public games x 1 pass in
+  2h12m. mean final_score = 1.669 (median 0.0, all 25 runs ended 'gave_up').
+- Scores >0 (9 games): ft09 14.29 (lv2/6), vc33 10.71 (lv2/7), cn04 4.76,
+  lp85/s5i5/sb26 2.78, re86 2.09, su15 1.28, bp35 0.27. 16 games 0.0.
+- vs the 8.21 submission baseline: ~5x lower. NOT a submission candidate.
+- Likely causes: (a) QLoRA adapter was trained against NF4-quantized base but
+  served on bf16 weights — the adapter absorbs quantization correction, not
+  pure behavior; (b) 1 epoch / 1200 stratified samples may be underfit;
+  (c) agent gives up early (many runs <50 actions).
+- bf16 LoRA retrain on Kaggle (original plan, trainer already supports it)
+  is the clean retry when GPU quota frees. Result saved:
+  /content/lora_eval_result.json on the runtime; transcripts in
+  /content/working/transcripts/.
