@@ -42,29 +42,43 @@ print('vllm', vllm.__version__)
 assert vllm.__version__.startswith('0.19'), 'expected vllm 0.19.x'
 """))
 
-CELLS.append(("code", """import os, pathlib, subprocess
-from google.colab import userdata
+CELLS.append(("code", """import os, pathlib, shutil, subprocess
 kd = pathlib.Path.home() / '.kaggle'; kd.mkdir(exist_ok=True)
-cred = userdata.get('KAGGLE_CREDENTIALS')  # full credentials.json for takumuhata
-assert cred and 'takumuhata' in cred, 'set Colab secret KAGGLE_CREDENTIALS'
-(kd / 'credentials.json').write_text(cred)
-os.chmod(kd / 'credentials.json', 0o600)
-r = subprocess.run(['kaggle', 'datasets', 'list', '-m'],
-                   capture_output=True, text=True)
-print((r.stdout or r.stderr)[:400])
-assert 'taaf' in (r.stdout or ''), 'kaggle auth failed — check KAGGLE_CREDENTIALS'
+cred_path = kd / 'credentials.json'
+# Preferred: Colab secret. Fallback: credentials.json uploaded to /content.
+try:
+    from google.colab import userdata
+    cred = userdata.get('KAGGLE_CREDENTIALS')
+except Exception:
+    cred = None
+if cred and 'takumuhata' in cred:
+    cred_path.write_text(cred)
+elif pathlib.Path('/content/kaggle_credentials.json').exists():
+    shutil.copy('/content/kaggle_credentials.json', cred_path)
+else:
+    raise AssertionError(
+        'set Colab secret KAGGLE_CREDENTIALS, or upload credentials.json '
+        'to /content/kaggle_credentials.json via the Files panel')
+os.chmod(cred_path, 0o600)
+assert 'takumuhata' in cred_path.read_text(), 'credentials are not takumuhata'
+import json as _json, requests as _rq
+_cred = _json.loads(cred_path.read_text())
+_r = _rq.get('https://www.kaggle.com/api/v1/datasets/download/takumuhata/taaf-colab-deps-v1',
+             headers={'Authorization': 'Bearer ' + _cred['access_token']},
+             stream=True, allow_redirects=False)
+print('auth check status:', _r.status_code)
+_r.close()
+assert _r.status_code in (200, 301, 302), 'kaggle auth failed — check credentials'
 """))
 
 CELLS.append(("code", """# Stream-download Kaggle datasets (CLI buffers 44GB in RAM — use requests).
 import json, pathlib, requests, zipfile
-import subprocess, sys
 _KJ = pathlib.Path.home() / '.kaggle' / 'credentials.json'
 def _hdr():
     cred = json.loads(_KJ.read_text())
     return {'Authorization': 'Bearer ' + cred['access_token']}
 def _refresh():
-    subprocess.run(['kaggle', 'datasets', 'list', '-m'],
-                   capture_output=True, text=True)  # CLI auto-refreshes token
+    pass  # access_token has ~24h validity; no CLI on this runtime
 
 def dl(slug, dest, marker):
     dest = pathlib.Path(dest); dest.mkdir(exist_ok=True)
