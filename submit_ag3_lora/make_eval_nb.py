@@ -63,46 +63,84 @@ os.chmod(cred_path, 0o600)
 assert 'takumuhata' in cred_path.read_text(), 'credentials are not takumuhata'
 import json as _json, requests as _rq
 _cred = _json.loads(cred_path.read_text())
-_r = _rq.get('https://www.kaggle.com/api/v1/datasets/download/takumuhata/taaf-colab-deps-v1',
-             headers={'Authorization': 'Bearer ' + _cred['access_token']},
-             stream=True, allow_redirects=False)
+_r = _rq.post('https://api.kaggle.com/v1/datasets.DatasetApiService/DownloadDataset',
+              json={'ownerSlug': 'takumuhata', 'datasetSlug': 'taaf-colab-deps-v1'},
+              headers={'Authorization': 'Bearer ' + _cred['access_token']},
+              stream=True, allow_redirects=False)
 print('auth check status:', _r.status_code)
 _r.close()
 assert _r.status_code in (200, 301, 302), 'kaggle auth failed — check credentials'
 """))
 
-CELLS.append(("code", """# Stream-download Kaggle datasets (CLI buffers 44GB in RAM — use requests).
-import json, pathlib, requests, zipfile
+CELLS.append(("code", """# Stream-download Kaggle datasets via the real API flow:
+# POST api.kaggle.com/v1/datasets.DatasetApiService/DownloadDataset with a
+# Bearer access_token -> 302 -> signed GCS URL. The stored access_token can be
+# expired; refresh it via /api/v1/access-tokens/generate (refresh_token).
+# Legacy GET www.kaggle.com/api/v1/datasets/download/<slug> works for PUBLIC
+# datasets only and is kept as fallback. CLI is broken on this runtime.
+import json, pathlib, requests, zipfile, sys, time
 _KJ = pathlib.Path.home() / '.kaggle' / 'credentials.json'
-def _hdr():
-    cred = json.loads(_KJ.read_text())
-    return {'Authorization': 'Bearer ' + cred['access_token']}
+_CRED = json.loads(_KJ.read_text())
+_TOK = _CRED['access_token']
+_API = 'https://api.kaggle.com/v1/datasets.DatasetApiService/DownloadDataset'
+_LEGACY = 'https://www.kaggle.com/api/v1/datasets/download/'
+
 def _refresh():
-    pass  # access_token has ~24h validity; no CLI on this runtime
+    global _TOK
+    r = requests.post('https://www.kaggle.com/api/v1/access-tokens/generate',
+        json={'refreshToken': _CRED['refresh_token'], 'apiVersion': 'API_VERSION_V1'},
+        headers={'Authorization': 'Bearer ' + _TOK, 'Content-Type': 'application/json'},
+        timeout=60)
+    if r.status_code == 200:
+        _TOK = (r.json().get('token') or r.json().get('accessToken')) or _TOK
+        _CRED['access_token'] = _TOK
+        _KJ.write_text(json.dumps(_CRED))
+        print('token refreshed', flush=True)
+    else:
+        print('token refresh ->', r.status_code, flush=True)
 
 def dl(slug, dest, marker):
     dest = pathlib.Path(dest); dest.mkdir(exist_ok=True)
     if (dest / marker).exists():
         print(slug, 'already present'); return
-    zp = pathlib.Path('/content') / (slug.split('/')[-1] + '.zip')
-    print('downloading', slug, '->', zp, flush=True)
-    url = 'https://www.kaggle.com/api/v1/datasets/download/' + slug
-    for attempt in range(2):
-        r = requests.get(url, headers=_hdr(), stream=True, allow_redirects=True)
-        if r.status_code == 401:
-            r.close(); _refresh(); continue
-        break
-    r.raise_for_status()
-        with open(zp, 'wb') as f:
-            n = 0
-            for chunk in r.iter_content(1 << 20):
-                if chunk:
-                    f.write(chunk); n += len(chunk)
-            print('downloaded', n / 1e9, 'GB', flush=True)
-    print('unzipping...', flush=True)
-    with zipfile.ZipFile(zp) as z:
-        z.extractall(dest)
-    zp.unlink()
+    owner, name = slug.split('/')
+    zp = dest / (name + '.zip')
+    print('downloading', slug, flush=True)
+    got = False
+    for attempt in range(3):
+        try:
+            r = requests.post(_API, json={'ownerSlug': owner, 'datasetSlug': name},
+                headers={'Authorization': 'Bearer ' + _TOK, 'Content-Type': 'application/json'},
+                stream=True, timeout=120)
+            if r.status_code in (401, 403) and attempt == 0:
+                r.close(); _refresh(); continue
+            if r.status_code in (401, 403):
+                r.close()
+                r = requests.get(_LEGACY + slug,
+                    headers={'Authorization': 'Bearer ' + _TOK}, stream=True, timeout=120)
+            r.raise_for_status()
+            with open(zp, 'wb') as f:
+                n = 0
+                for chunk in r.iter_content(1 << 22):
+                    if chunk:
+                        f.write(chunk); n += len(chunk)
+                        if n % (1 << 30) < (1 << 22):
+                            print('  %.1f GB' % (n / 1e9), flush=True)
+            print('downloaded %.2f GB' % (n / 1e9), flush=True)
+            got = True
+            break
+        except Exception as e:
+            print('attempt', attempt, 'failed:', e, flush=True)
+            time.sleep(20); _refresh()
+    if not got:
+        sys.exit('FAILED ' + slug)
+    if zipfile.is_zipfile(zp):
+        print('unzipping...', flush=True)
+        with zipfile.ZipFile(zp) as z:
+            z.extractall(dest)
+        zp.unlink()
+    else:
+        print('not a zip, leaving raw file at', zp)
 
 dl('takumuhata/taaf-colab-deps-v1', '/content/deps', 'arc_pkgs.zip')
 dl('takumuhata/taaf-anim-27b-lora', '/content/bundle', 'taaf-kaggle-bundle.json')
@@ -112,17 +150,22 @@ print('base shards:', len(list(pathlib.Path('/content/base_27b').glob('*.safeten
 """))
 
 CELLS.append(("code", """# Unpack nested zips in the deps dataset; locate arc pkgs + env files.
+# NOTE: the deps dataset may hold plain dirs (arc_pkgs/, environment_files/)
+# rather than nested zips — search both roots.
 import glob, pathlib, sys, zipfile
 for z in sorted(glob.glob('/content/deps/*.zip')):
     with zipfile.ZipFile(z) as zf:
         zf.extractall('/content/deps_unz')
 
-_arc_root = next(pathlib.Path(p).parent
-                 for p in glob.glob('/content/deps_unz/**/arcengine', recursive=True))
-ARC_PKGS = str(_arc_root)
-_env_root = next(pathlib.Path(p).parent
-                 for p in glob.glob('/content/deps_unz/**/ar25', recursive=True))
-ENV_DIR = str(_env_root)
+def _find(name):
+    for root in ('/content/deps_unz', '/content/deps'):
+        hits = glob.glob(root + '/**/' + name, recursive=True)
+        if hits:
+            return pathlib.Path(hits[0]).parent
+    raise FileNotFoundError(name)
+
+ARC_PKGS = str(_find('arcengine'))
+ENV_DIR = str(_find('ar25'))
 print('ARC_PKGS:', ARC_PKGS)
 print('ENV_DIR:', ENV_DIR, '→', len(list(pathlib.Path(ENV_DIR).iterdir())), 'dirs')
 if ARC_PKGS not in sys.path:
@@ -211,7 +254,8 @@ Q38_P1_PUBLIC_GAME_IDS = [
 ]
 import taaf.game_api
 spec = bm.games[0].arcade_spec
-spec.environments_dir = ENV_DIR  # Colab env files, not /kaggle/input
+# spec is a frozen attrs instance — setattr guard, assign via object.__setattr__
+object.__setattr__(spec, 'environments_dir', pathlib.Path(ENV_DIR))  # Colab env files, not /kaggle/input
 bm.games = [taaf.game_api.GameAPI(env_name=g, arcade_spec=spec)
             for g in Q38_P1_PUBLIC_GAME_IDS]
 bm.n_passes = 1
