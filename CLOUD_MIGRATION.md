@@ -720,3 +720,33 @@ AGI-3 LoRA bet.
   `kaggle datasets list -m` which auto-refreshes the token on disk, then retries.
 - Needs A100 80GB (54GB weights). Verified mean >8.21 ⇒ submission candidate —
   but submitting still needs Kaggle GPU + user resume.
+
+## 2026-09-29: Colab eval RUNNING + real Kaggle download API flow documented
+
+- Eval is LIVE on the Colab A100-80GB runtime (colab_lora_eval.ipynb): all 4
+  datasets downloaded (44GB base, 18 shards), vLLM serving base+LoRA under the
+  `duck-27b-lora` alias, `bm.run()` 25 games x 1 pass underway (~6-8h).
+- REAL Kaggle dataset-download flow (kaggle CLI broken on the runtime):
+  credentials.json holds OAuth {refresh_token, access_token(expires ~24h),
+  username}. Mint a fresh token via
+  POST https://www.kaggle.com/api/v1/access-tokens/generate
+    json={'refreshToken': rt, 'apiVersion': 'API_VERSION_V1'}
+    headers={'Authorization': 'Bearer ' + old_access_token}
+  -> {'token': new}. Then POST
+  https://api.kaggle.com/v1/datasets.DatasetApiService/DownloadDataset
+    json={'ownerSlug': o, 'datasetSlug': s} + Bearer -> 302 signed GCS URL.
+  Works for PRIVATE datasets. Legacy GET /api/v1/datasets/download/<slug>
+  only works for PUBLIC. HTTP Basic (username, KAGGLE_KEY) only works with
+  takumuhata's OWN api key — org-secret KAGGLE_KEY is a different account (403).
+  Working downloader template: /tmp/colab_dl2.py (also hosted on paste.rs).
+- deps dataset (taaf-colab-deps-v1) contains PLAIN dirs arc_pkgs/ +
+  environment_files/ — NOT nested zips. make_eval_nb.py cell 4 now searches
+  both /content/deps_unz and /content/deps.
+- bm.games[0].arcade_spec is a FROZEN attrs instance: assign via
+  object.__setattr__(spec, 'environments_dir', Path(ENV_DIR)).
+- Colab GUI pitfalls: Files-panel uploads land in the PANEL's browsed dir
+  (were at /, not /content); notebook TERMINAL typing silently drops '_', '*',
+  '"' (a 'deps_unz' mkdir became literal 'deps?unz' — glob quirk) — type
+  commands in a CODE CELL or upload a .sh script instead; Ctrl+F10 doesn't
+  reach Colab, use the cell play buttons / Ctrl+Enter inside a focused cell.
+- make_eval_nb.py updated with all of the above; bfdcbdb..616241a pushed.
