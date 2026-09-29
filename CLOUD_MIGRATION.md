@@ -673,3 +673,32 @@ AGI-3 LoRA bet.
 - This DECOUPLES the scarce resource: Colab trains the adapter while
   Kaggle GPU stays free for the user's other job; only the ~7h eval
   kernel still needs Kaggle quota.
+
+## 2026-09-29: QLoRA training DONE on Colab A100-80GB (adapter published)
+- Drove the run in Colab (thatakumu@gmail.com, authuser=1) on
+  notebook 1iP5fqBc_dodJ-rRegb6MnMEWWJuQf3iN, nohup python3
+  /content/sft_data/train_lora.py: SUBSAMPLE=1200 stratified, 1 epoch,
+  150 steps, QLORA=1 4-bit NF4, MAX_LEN=8192, r16/a32 LoRA on
+  q,k,v,o,gate,up,down (7 module kinds, 256 lora_A/B pairs, 79.7M params).
+- Result: train_loss 0.5925 avg, last logged 0.5564->0.5666 (from 0.7127
+  at step 10; steady descent, plateau ~0.58 mid-run). grad_norm stable
+  0.2-0.34. Runtime 35090s ~9.75h (~233s/step: hybrid delta-net layers
+  take unfused PyTorch path without flash-linear-attention).
+- Checkpoints ck37+ck111 backed up locally (/home/ubuntu/lora_ckpts/).
+- Published: takumuhata/taaf-duck-lora-v1 (private dataset) =
+  adapter_model.safetensors 304MB + adapter_config.json + chat_template.jinja
+  + tokenizer.json + tokenizer_config.json. Note adapter_config
+  base_model_name_or_path=/content/base_27b (harmless — eval kernel loads
+  bf16 base itself, peft only needs the tensors).
+- Colab pitfalls hit (see /home/ubuntu/colab_notes.txt): kaggle CLI buffers
+  whole downloads in RAM (stream via requests), KAGGLE_KEY secret is a
+  FOREIGN account token (403 on private datasets — upload via Files panel
+  + push datasets locally), terminal typing drops chars (use .sh uploads),
+  qwen3_5 needs transformers>=5.x + peft>=0.21, transformers 5.x dropped
+  TrainingArguments.warmup_ratio (script filters kwargs by signature).
+- NEXT (needs Kaggle GPU — paused per user): push submit_ag3_lora/
+  (arc3-duck-anim-27b-lora) as before: base rahim3 bf16 + this adapter via
+  --enable-lora, ~7h eval. If verified mean >8.21, submit.
+- Alternative future eval path: run the same eval on the Colab A100 (saves
+  Kaggle quota) — needs the eval notebook + datasets ported; the harness
+  itself is engine-only so it should work, unverified.
