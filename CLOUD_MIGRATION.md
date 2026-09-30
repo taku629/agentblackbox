@@ -787,3 +787,43 @@ AGI-3 LoRA bet.
   Verdict: merged-mean recovers toward ~5 -> adapter fine, ship merged model
   (Kaggle, no --enable-lora); stays ~1.7 -> adapter bad, retrain bf16.
   Runtime currently dead — needs a fresh Colab A100-80GB when user resumes.
+
+## 2026-09-30 (later): merged-eval experiment — VERDICT: adapter itself is bad
+
+- Ran colab_merged_eval.ipynb on Colab A100-80GB. Proper QLoRA merge
+  (dequantize NF4 base + add deltas) produced a MIXED-PRECISION dir:
+  only the 256 LoRA-targeted modules dequantized to bf16 (570 tensors);
+  1818 untargeted modules stayed nf4 (nested_absmax/nested_quant_map U8
+  keys) — vLLM cannot serve that. 17.9GB single safetensors at
+  /content/merged_27b (kept on runtime; delete to reclaim disk).
+- PIVOTED to the cleaner test: vLLM native bnb serving =
+  --load-format bitsandbytes --quantization bitsandbytes + --enable-lora
+  (nf4 base + adapter = the EXACT training-time configuration; merge not
+  needed). Confirmed working: weights loaded in 18.4GiB (nf4 size) with
+  LoRA active. Injected via kernel env:
+    os.environ.pop('MERGED_MODEL_PATH')
+    os.environ['VLLM_EXTRA_ARGS'] = '--load-format bitsandbytes --quantization bitsandbytes'
+  (VLLM_EXTRA_ARGS is appended to the server cmd inside
+  start_vllm_server; cell 7 rewrites colab_eval_setup.py from SETUP_SRC
+  every run — patch the kernel env, not the file.)
+- RESULT (7-game subset, identical env instance IDs):
+    merged nf4+LoRA (faithful)   mean 1.76
+    bf16+LoRA    (mismatched)    mean 4.95 on same subset (1.669 all-25)
+    base 27B     (un-adapted)    mean 13.87 on same subset (4.97 all-25)
+  Per-game nf4+lora: re86 8.33, lp85 2.78, vc33 1.22, rest 0.00.
+- VERDICT: **adapter bad** — serving precision was NOT the cause; the
+  trained deltas actively degrade the model under any precision.
+  Quantization-mismatch theory dead. ~10h QLoRA run produced a
+  destructive adapter (train_loss ~0.58 but eval collapsed).
+- Runtime notes: cell editor drops newlines (xdotool typing) — write
+  cells as single-line semicolon statements or upload .py scripts via
+  the Files chooser; Terminal also drops chars, use xdotool type+Return.
+  transformers 5.x was needed for the merge attempt but vllm 0.19
+  requires <5 — downgraded to 4.57.6; bitsandbytes 0.50.2 installed.
+- IN FLIGHT: over-correction probe — scaled adapter lora_B x0.4 ->
+  /content/lora_adapter_s040 (scale_adapter.py), kernel env repointed,
+  server re-booting for a second 7-game eval (~1.5h). If it recovers
+  meaningfully: deltas too strong -> retrain lower LR/alpha or eval an
+  early checkpoint (ck37/ck111 live in /home/ubuntu/lora_ckpts/).
+  If it stays ~1.7-2: retrain bf16 LoRA (A100-80GB can hold bf16 54GB
+  + adapter optim states) or revisit SFT data quality.
