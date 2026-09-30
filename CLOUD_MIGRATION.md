@@ -827,3 +827,33 @@ AGI-3 LoRA bet.
   early checkpoint (ck37/ck111 live in /home/ubuntu/lora_ckpts/).
   If it stays ~1.7-2: retrain bf16 LoRA (A100-80GB can hold bf16 54GB
   + adapter optim states) or revisit SFT data quality.
+
+## 2026-09-30 (final): scaled-adapter probe + free forensics — LoRA route parked, needs data rethink
+
+- Scaled-adapter (lora_B x0.4) 7-game eval: partial mean ~2.34 when the
+  Colab runtime was RECYCLED mid-run (compute-unit exhaustion). Scores:
+  re86 5.56, vc33/cn04/ar25 ~1.4-2.4, ft09/sc25 0.0. Better than faithful
+  1.76 but nowhere near bf16+adapter 4.95, let alone base 13.87 —
+  over-correction rescue FAILED.
+- Delta-norm progression (||B||x||A|| med): ck37 0.81 -> ck111 1.00 ->
+  final 1.06. Adapter was born ~3x pilot magnitude and stayed there —
+  not a late-training blowup. ck37 eval would likely also be bad.
+- SFT data forensics (packed_sft.jsonl): 58.6% of assistant msgs have
+  EMPTY content (bare tool_call); 48.3% of samples END on a bare tool
+  call; median assistant len 0. Most supervised tokens = action-format
+  JSON, not reasoning -> plausibly taught 'act without thinking'.
+  Give-up-language hypothesis dead (0.3%). Masking + chat template
+  verified correct and identical between train tok and adapter jinja.
+- VERDICT (final): adapter destructive under any serving precision;
+  scaling/mismatch hypotheses exhausted. The recipe (short windows,
+  reasoning-thin, 1ep on 1200 samples, deltas 3x pilot) needs a DATA
+  rethink — full-length convs, reasoning-dense samples — not a
+  precision/config tweak. Each Colab retrain ~10h A100.
+- Colab compute: user account drained to ~8.5 units (~1h A100) — runtime
+  recycled all /content (44GB base gone); disconnected to preserve
+  balance. GPU LoRA path CLOSED until units recharged or Kaggle quota.
+- Next lever remains the harness route (proven): 8.21-run kernels +
+  deployed perception/scoring-prompt patches; resume Kaggle automation
+  when user frees quota. bf16+adapter 4.95-subset vs base 13.87-subset
+  means even the 'working' adapter config costs 3x — LoRA wins nothing
+  short of a recipe overhaul.
