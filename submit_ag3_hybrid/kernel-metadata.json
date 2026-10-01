@@ -1,6 +1,6 @@
 {
  "id": "takumuhata/arc3-duck-anim-flashnext",
- "title": "ARC3 Duck Anim Flashnext",
+ "title": "ARC3 Duck Anim Flashnext V3",
  "code_file": "arc3-duck-anim-flashnext.ipynb",
  "language": "python",
  "kernel_type": "notebook",
@@ -12,7 +12,7 @@
   "gpu"
  ],
  "dataset_sources": [
-  "takumuhata/taaf-anim-flashnext-bundle",
+  "takumuhata/taaf-anim-flashnext-bundle-v3",
   "keithtyser/qwen38-flash-next-vllm-nvfp4-runtime-v1"
  ],
  "kernel_sources": [],
