@@ -10,9 +10,11 @@ next tick. Safe to run repeatedly: empty queue exits immediately.
 Usage: .venv/bin/python push_pending.py
 """
 import json
+import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -30,6 +32,16 @@ def main():
     pending = json.loads(PENDING_FILE.read_text())
     if not pending:
         print("pending push queue is empty")
+        return
+
+    # GPU pushes are confined to Saturdays (UTC): the weekly GPU budget is
+    # shared with other competitions and Sundays are reserved for RSNA.
+    # Set TAAF_PUSH_ANY_DAY=1 to bypass the gate.
+    if (
+        os.environ.get("TAAF_PUSH_ANY_DAY") != "1"
+        and datetime.now(timezone.utc).weekday() != 5
+    ):
+        print("outside Saturday(UTC) push window; queue left for Saturday")
         return
 
     vermap = json.loads(VERMAP_FILE.read_text()) if VERMAP_FILE.is_file() else {}

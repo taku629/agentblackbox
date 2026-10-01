@@ -954,3 +954,40 @@ mon.sh, data/{challenges,solutions}.json` (+ `inference_outputs/`,
   → still ZERO candidate files in 90.9s. TTT is not the limiter; the 4-bit
   base model's raw generation is. Confirms the T4-free-tier verdict.
   Runtime disconnected/deleted after run (~5 units left on account).
+
+## AGI-3 eval wall-clock analysis (Oct 1, /home/ubuntu/af_out = 8.21-run artifacts)
+
+**Finding: the public-25 eval is wall-clock-bound, not step-bound.**
+- Settings: `max_runtime_s_per_game=7920s`, `concurrency=28`,
+  `analyzer_timeout=1200s` (mirrors competition; 9h kernel budget fits
+  ~110 hidden games in 4 waves of 28).
+- All 25 games ran concurrently and died together at global budget end —
+  every non-completing transcript ends on a vLLM read-timeout (the final
+  in-flight request truncated at remaining budget).
+- Per game: ~50 analyzer calls, median 194s/call (mean 328s), median ~2k
+  generated tokens/call → ~8.7 tok/s per stream (28 streams saturate the
+  GPU; aggregate ~240 tok/s). **Turns are the currency; tokens/turn is the
+  only lever.**
+- Zeros/stuck games (bp35, g50t, sc25) burned the whole budget on LEVEL 1.
+  ACTION7 was a required mechanic in ≥6 public games (rotation etc.) —
+  calls 73-370/game, all rejected pre-fix. v2 bundles carry the fix.
+- Late bloomers exist (tu93, dc22 first completions at ~85-89% of budget)
+  → do NOT kill "hopeless" games early; it would cull real completions.
+- Concurrency/budget are forced by 110 games / 9h — not free knobs.
+  `LOCAL_ANALYZER_MAX_OUTPUT` hard cap left at 6144: truncation mid-tool-call
+  wastes the whole turn — prompt-level brevity is the safer route.
+
+**Saturday A/B (both pushes carry the same patch set: ACTION7+UNDO fixes,
+perception hints, scoring line):**
+- `arc3-duck-anim-v2` → `taaf-anim-flashnext-bundle-v2` — control arm.
+- `arc3-duck-anim-flashnext` → `taaf-anim-flashnext-bundle-v3` (new,
+  repo `bundle_fast/`) — experimental arm: +3 prompt hints: (1) compact
+  reasoning / reserve long analysis for new level or failed plan,
+  (2) early RESET on wedged push-puzzle states (bp35-style deadlocks),
+  (3) finish understood levels in code — parse grid, compute sequence
+  programmatically, batch actions (ft09 47.6 pattern).
+- Push gating: `push_pending.py` now pushes ONLY on Saturday (UTC) —
+  weekly GPU budget shared with RSNA (Sundays reserved). Bypass with
+  `TAAF_PUSH_ANY_DAY=1`.
+- Read-out: same public-25 → compare mean vs 8.21 baseline and vs each
+  other; submit_best.py picks verified-mean ≥4.0 automatically.
