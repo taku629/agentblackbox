@@ -21,6 +21,7 @@ GAME_OVERVIEW_ADDENDUM = (
     "- At ~2-3 minutes per model turn, a full game budget funds only ~40-60 turns -- turns are the real currency, not actions. A turn that ends without executing any action spends the same budget as one that moves you forward, so most turns should execute at least one action, and when your next steps are already predictable you should run several `action(...)` calls in one Python snippet rather than spending a turn per step.\n"
     "- Keep each turn's written reasoning compact: record the working hypothesis and the decisive probe, then act. Re-deriving facts you already established costs the same wall-clock budget as acting, so reserve long analysis for a newly entered level or a plan that just failed.\n"
     "- In push/block-movement puzzles a wedged position can be unrecoverable: if an object ends up pinned against a wall or another object and no undo-style action exists, prefer RESET early instead of spending the remaining budget inside a dead state.\n"
+    "- Once a level's mechanic is understood, finish it in code rather than by hand: parse the board grid, compute the full move/click sequence programmatically (search or simulation against your model of the rules), and execute it in batched `action(...)` calls. Hand-solving step by step burns actions and turns that scoring punishes.\n"
     "- In this environment, boards are presented as 64 x 64 color grids rendered with ARC color symbols.\n"
     f"- Color legend: {ARC_COLOR_LEGEND}.\n"
 )
