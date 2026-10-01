@@ -883,3 +883,47 @@ bare assistant msgs; median 1310 chars of reasoning_content). Earlier "58.6%
 empty tool_call" claim measured `content` only. Adapter was born-destructive
 (delta norms ~3x pilot from ck37), cause still = recipe-scale overfit, not
 missing reasoning. Retrain needs gentler recipe + GPU units.
+
+## 2026-10-01 — Colab T4 eval of the production AGI-2 pipeline (VERIFIED RECIPE)
+
+Goal: run the production kernel's per-task TTT + turbo-DFS decode + selection
+locally on Colab Tesla T4 (14.5 GB, no bf16) for a score baseline without
+burning Kaggle quota. Notebook: Drive `colab_ag2_eval.ipynb`
+(id 16RXdDHX2TjzN14_aC_wHEPpFotnpiH7o). All execution is done via uploaded
+files + Terminal/cells — do NOT re-run the original notebook cells
+(they are the bf16/L4 config and will OOM).
+
+**Working /content layout** (files uploaded one at a time via Files panel):
+`arc_loader.py, arc_decoder.py, arc_solver.py, eval_starter.py, runeval.sh,
+mon.sh, data/{challenges,solutions}.json` (+ `inference_outputs/`,
+`eval_stdout.log`, `worker0`).
+
+**T4 recipe — every one of these was needed, each removed a distinct failure:**
+- `load_in_4bit=True` → model 1.92 GB (probe-verified); bf16 load is ~8 GB
+- `fp16=False, bf16=False` in train_args → no AMP; fp16 GradScaler crashes on
+  4-bit params ("Attempting to unscale FP16 gradients")
+- NO fp16 param cast loop (it manufactures fp16 grads → same scaler crash)
+- `use_gradient_checkpointing="unsloth"` (in from_pretrained AND get_peft_model)
+  + `gradient_checkpointing=True` — plain True never engaged (~10 GB activations)
+- `optim="adamw_8bit"` — adamw_torch ~2 GB vs ~0.5 GB
+- `max_seq_length = 2048` — but see cut_to_len hazard below
+- `target_modules` must NOT include `embed_tokens`/`lm_head`: unsloth's
+  `offload_input_embeddings` torch.saves the embedding into the model dir
+  (`/kaggle/input` is READ-ONLY → `Read-only file system` RuntimeError)
+- arc_loader.py guard: `test = train[-1] if train else None` — `cut_to_len`
+  drops train examples whose prompt exceeds max_len; at seq 2048 some tasks
+  end with train=[] → `fmt_train` IndexError without the guard
+- Peak resident during TTT ≈ 10.3-10.7 GB — fits with ~3.8 GB headroom
+- Model load transient reaches ~10.4 GB (bf16 chunks quantize on GPU) — survives
+- Per task: TTT (16-augment, r256, 1 epoch) then turbo-DFS decode over 16 aug
+  variants → `.ex` pickles in /content/inference_outputs + per-candidate
+  augmented scoring. End-to-end confirmed on task 0934a4d8.
+
+**Execution channel gotchas (learned the hard way):**
+- Files-panel upload = the only reliable file channel; GTK picker Ctrl+L then
+  full path; multi-select uploads deliver only the first file — upload singly
+- Terminal `type` drops `_`, `?`, `&&` → never type commands; use uploaded .sh
+- Cell typing drops leading chars sporadically → start cells with a junk line
+  (`x=1`) and avoid `!` shell lines (prefer `subprocess.run`)
+- errored cells sometimes refuse further edits — add a new cell (Esc,B)
+- stray file pickers steal typing — Escape them first
