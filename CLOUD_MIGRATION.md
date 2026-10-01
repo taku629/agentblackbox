@@ -857,3 +857,29 @@ AGI-3 LoRA bet.
   when user frees quota. bf16+adapter 4.95-subset vs base 13.87-subset
   means even the 'working' adapter config costs 3x — LoRA wins nothing
   short of a recipe overhaul.
+
+## 2026-10-01 — Stale-master automation regression (ROOT CAUSE of bad submissions)
+
+**Finding**: the daily-submit automation (`auto-a05353b07e244f6f891382fc34bb7b9f`,
+ticks 04:45/10:45/16:45/22:45/23:45 UTC) clones the repo's DEFAULT branch each
+run. origin/master = 909ac93 (mid-history of the devin work branch), whose
+`arc-agi-3/submit_best.py` still pins:
+- AGI-3 job → `takumuhata/forge-pathfinder-bfs-agent` (scored 0.08–0.23 — the
+  Forge v7 submissions of 9/25–29 were this bug, not a score-aware pick)
+- AGI-2 job → `arc-agi2-lb33-perfpatch-dsl` (28.06–29.72) instead of the plain
+  `arc-agi2-lb33-89-perfpatch` (30.56 × 3, deterministic — verified byte-identical
+  to mikelou1's public 33.89-named kernel; the ~3pt gap to 33.89 is eval-set
+  variance, not a regression in our copy)
+
+**Fixes applied**:
+- PR #6 `devin/fix-submit-best-plain` → master: ports work-branch submit_best.py
+  + kernel_versions.json only (65/-29 LOC). Merging restores correct picks.
+- Automation prompt updated (pending user approval): adds
+  `git fetch origin devin/1790016368-summary-txt-always && git checkout FETCH_HEAD`
+  before running the scripts, so ticks use the work branch even while master lags.
+
+**Data note**: LoRA forensic correction — SFT data is reasoning-DENSE (0% truly
+bare assistant msgs; median 1310 chars of reasoning_content). Earlier "58.6%
+empty tool_call" claim measured `content` only. Adapter was born-destructive
+(delta norms ~3x pilot from ck37), cause still = recipe-scale overfit, not
+missing reasoning. Retrain needs gentler recipe + GPU units.
