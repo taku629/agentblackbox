@@ -950,3 +950,7 @@ mon.sh, data/{challenges,solutions}.json` (+ `inference_outputs/`,
   private sets with the KGAT key).
 - arc_solver.py on /content has the left-pad fix for ragged decode batches
   (`prefix_tokens` padded to max len with PAD_ID=13); mirrored locally.
+- Ablation: ran task 135a2760 with `trainer.train()` skipped (zero-init LoRA)
+  → still ZERO candidate files in 90.9s. TTT is not the limiter; the 4-bit
+  base model's raw generation is. Confirms the T4-free-tier verdict.
+  Runtime disconnected/deleted after run (~5 units left on account).
