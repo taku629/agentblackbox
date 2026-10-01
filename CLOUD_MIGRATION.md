@@ -927,3 +927,26 @@ mon.sh, data/{challenges,solutions}.json` (+ `inference_outputs/`,
   (`x=1`) and avoid `!` shell lines (prefer `subprocess.run`)
 - errored cells sometimes refuse further edits — add a new cell (Esc,B)
 - stray file pickers steal typing — Escape them first
+
+**T4 eval run result (Oct 1, ~1h45m for all 10 tasks):**
+- All 10 tasks processed end-to-end (`[Rank 0] done!`, clean exit). Per-task
+  289-728s — much faster than feared because decode exhausts early when
+  nothing parses.
+- **Local score: 0.0%** — only 2/10 tasks emitted any `.ex` pickles
+  (0934a4d8: 5 candidates, 142ca369: 3), 0/9 candidates correct,
+  ×120 extrapolation 0.0. 8/10 tasks produced ZERO parseable candidate grids.
+- `training_loss=nan` in the log is a REPORTING ARTIFACT: train_args set
+  `logging_strategy="no"` → empty log history → aggregate NaN regardless of
+  the real loss. Not evidence TTT diverged.
+- Decode-candidate yield ~5% of augmented variants vs healthy production —
+  consistent with 4-bit quant + max_seq_length 2048 (cut_to_len drops long
+  prompts) degrading generation quality for this structured task.
+- VERDICT: **T4 (free Colab tier) is not a viable proxy for the L4/bf16
+  pipeline.** Mechanics verified end-to-end, but the score signal is ~0 —
+  too lossy to measure real changes. Baseline comparisons stay on Saturday
+  Kaggle GPU quota.
+- Scorer on Colab: `python3 /content/score.py` (uploaded via paste.rs —
+  cell typing corrupts >300-char payloads; Kaggle dataset pull 403s on
+  private sets with the KGAT key).
+- arc_solver.py on /content has the left-pad fix for ragged decode batches
+  (`prefix_tokens` padded to max len with PAD_ID=13); mirrored locally.
