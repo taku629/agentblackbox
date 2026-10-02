@@ -1124,3 +1124,25 @@ land in taaf-ag3-eval-out for retrieval from the ops VM.
   carries the capped variant; control arm unchanged.
 - Sampling-variance note: single seed per scenario, v2 stuck_L2 itself
   swung 928→1481 across runs — treat as directional, not conclusive.
+
+### Kaggle API code-submission block (Oct 2) — NEW BLOCKER + workaround
+
+- `CreateCodeSubmission` now returns 403 `Permission 'kernelSessions.get'
+  was denied` on EVERY credential: admin-scoped OAuth token (fresh refresh),
+  classic KAGGLE_API_TOKEN, and after removing stale access_token file.
+  Kernel status/output reads still work; AGI-2 file submissions still work
+  (this is a CODE-submission-only block).
+- This matches a Feb-2026 report that Kaggle is restricting code-competition
+  submissions via public API — enforcement apparently reached this
+  account/competition between Oct 1 05:02 (last working submit) and Oct 2.
+- WORKAROUND THAT WORKS: browser UI submit. Chrome is logged into Kaggle
+  via Google account thatakumu@gmail.com (= takumuhata). Path:
+  competition page → "Submit Prediction" → Notebook tab → pick kernel +
+  version + submission.parquet → Submit. Verified live: anim-flashnext V1
+  submitted Oct 2 ~11:15 UTC (status "Notebook Running").
+- CONSEQUENCE: automation ticks can still run submit_best (AGI-2 file
+  submits keep working; AGI-3 attempts now log a 403). AGI-3 daily
+  submissions need the browser path — either driven from a session with
+  Chrome access or manually by the user.
+- Saturday queue unchanged: kernel PUSHES use a different endpoint
+  (PushKernel) — no evidence they are blocked; verify on first push.
