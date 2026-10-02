@@ -999,3 +999,49 @@ stale whenever a version was pushed outside push_pending.py;
 (b) both Saturday kernels write /kaggle/working/variant_id.json
 (anim-v2 / flashnext-v3) so submit_best logs which code produced a run's
 output (informational; no gating yet).
+
+## Colab full-fidelity eval runbook (Oct 2, verified working)
+
+Colab G4 (Colab Pro + PAYG) = RTX PRO 6000 Blackwell, sm_120, 96GB —
+identical shape to the Kaggle NvidiaRtxPro6000. The full AGI-3 stack
+serves natively; 25-game offline eval runs end-to-end with zero Kaggle
+GPU quota. Cost: only compute units (G4 ~19.5/hr — the 135GB model
+download eats ~1h of that, plus ~2.5-4h eval).
+
+**Layout:** `/kaggle` on Colab is a read-only ext4 mount —
+`mount --bind /content/kroot /kaggle` makes the whole kaggle tree
+writable (run once per runtime; survives for the session). All driver
+steps are idempotent.
+
+**Auth (IMPORTANT — stale secret):** the `KAGGLE_CREDENTIALS` Colab
+secret holds two OLD kaggle.json-style creds; they authenticate but
+CANNOT see takumuhata's private datasets (`datasets list -m` empty,
+401 on dataset status) — scoped/dead keys. Working creds are the kaggle
+2.x OAuth pair on the ops VM (`~/.kaggle/access_token` +
+`~/.kaggle/credentials.json` — credentials.json has the refresh token;
+access_token alone is NOT enough). Inject once per runtime via the
+Colab **Terminal** (not a cell — keeps the token out of the saved
+notebook):
+```
+echo <access_token> > /root/.kaggle/access_token
+echo <credentials.json-base64> | base64 -d > /root/.kaggle/credentials.json
+```
+Use `kaggle` >=2.x everywhere (1.x ignores access_token and the dead
+kaggle.json keys). kaggle 2.x notes: `competitions download` has no
+`--unzip` — it drops a single <comp>.zip, unzip manually; `datasets
+download --unzip` unchanged; `kaggle whoami` is not a 2.x command.
+kagglehub.model_download works unauthenticated for the public
+keithtyser model.
+
+**Driver:** `takumuhata/taaf-ag3-eval-src` dataset →
+`colab_driver.py` + both eval notebooks. `TAAF_EVAL_VARIANT=v3|v2`
+picks the arm (v3=taaf-anim-flashnext-bundle-v3+arc3-duck-anim-flashnext,
+v2=taaf-anim-flashnext-bundle-v2+arc3-duck-anim-v2). It: apt ninja →
+uv venv py3.12 → pip papermill+kaggle>=2+kagglehub → makes
+/kaggle/input dirs → competition download+unzip → bundle+runtime
+datasets → kagglehub model (~50min at ~38MB/s) → symlink MODEL_PATH →
+papermill the eval notebook (cwd=/kaggle/working) → parse score.json →
+upload score/transcripts/provenance to `takumuhata/taaf-ag3-eval-out`.
+
+**Results flow:** MEAN line printed in cell output; artifacts also
+land in taaf-ag3-eval-out for retrieval from the ops VM.
