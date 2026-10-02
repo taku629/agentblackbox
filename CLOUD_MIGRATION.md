@@ -991,3 +991,11 @@ perception hints, scoring line):**
   `TAAF_PUSH_ANY_DAY=1`.
 - Read-out: same public-25 → compare mean vs 8.21 baseline and vs each
   other; submit_best.py picks verified-mean ≥4.0 automatically.
+
+**submit_best hardening (Oct 2):** Devin Review findings addressed —
+(a) status=COMPLETE now submits kernel_version="latest" (the run that
+produced the verified output) instead of the vermap pin, which drifted
+stale whenever a version was pushed outside push_pending.py;
+(b) both Saturday kernels write /kaggle/working/variant_id.json
+(anim-v2 / flashnext-v3) so submit_best logs which code produced a run's
+output (informational; no gating yet).

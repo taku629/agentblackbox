@@ -154,9 +154,21 @@ def _mean_from_score_json(path):
 
 def verified_mean(slug):
     """Fetch the kernel's score summary (summary.txt or score.json) and parse
-    the mean public-eval score. None on failure."""
+    the mean public-eval score. Returns (mean, variant): variant is the
+    run's self-reported variant_id.json marker when present, else None.
+    mean is None on failure."""
+    variant = None
     try:
         with tempfile.TemporaryDirectory() as td:
+            try:
+                api.kernels_output(slug, td, file_pattern="variant_id.json")
+            except Exception:
+                pass
+            for p in Path(td).rglob("variant_id.json"):
+                try:
+                    variant = json.loads(p.read_text(errors="replace")).get("variant")
+                except Exception:
+                    pass
             try:
                 api.kernels_output(slug, td, file_pattern="summary.txt")
             except Exception:
@@ -174,23 +186,34 @@ def verified_mean(slug):
                     r"mean score:\s*([0-9.]+)", p.read_text(errors="replace")
                 )
                 if matches:
-                    return float(matches[-1])
+                    return float(matches[-1]), variant
             for p in Path(td).rglob("score.json"):
                 mean = _mean_from_score_json(p)
                 if mean is not None:
-                    return mean
+                    return mean, variant
     except Exception as e:
         log(f"{slug}: mean fetch failed {str(e)[:120]}")
     # Output of the last completed run is hidden while a newer version is
     # queued/running; fall back to the last hand-verified mean.
     if slug in KNOWN_MEAN:
-        return KNOWN_MEAN[slug]
-    return None
+        return KNOWN_MEAN[slug], None
+    return None, None
 
 
 def submit(job):
-    """Try the mapped/pinned version first, then latest (None)."""
-    ver = job.get("kernel_version") or mapped_version(job["kernel"])
+    """Try the mapped/pinned version first, then latest (None).
+
+    kernel_version="latest" submits whatever the newest version is; use it
+    only when the kernel's status is COMPLETE, i.e. the newest version is
+    also the run that produced the verified output.
+    """
+    ver = job.get("kernel_version")
+    if ver == "latest":
+        return api.competition_submit_code(
+            file_name=job["file_name"], message=job["message"],
+            competition=job["competition"], kernel=job["kernel"],
+            kernel_version=None)
+    ver = ver or mapped_version(job["kernel"])
     try:
         return api.competition_submit_code(
             file_name=job["file_name"], message=job["message"],
@@ -223,13 +246,19 @@ def pick_candidate():
         if status is None:
             log(f"{slug}: status lookup failed")
             continue
-        mean = verified_mean(slug)
-        log(f"{slug}: status={status} mean={mean}")
+        mean, variant = verified_mean(slug)
+        log(f"{slug}: status={status} mean={mean} variant={variant}")
         if mean is None:
             continue
-        eff_ver = ver or mapped_version(slug)
-        if "COMPLETE" not in str(status) and eff_ver and eff_ver > 1:
-            eff_ver -= 1  # in-flight version hasn't produced output yet
+        if "COMPLETE" in str(status):
+            # The latest run finished, so its version produced this output.
+            # Submit "latest" rather than the vermap pin, which drifts stale
+            # when a version was pushed outside push_pending.py.
+            eff_ver = "latest"
+        else:
+            eff_ver = ver or mapped_version(slug)
+            if isinstance(eff_ver, int) and eff_ver > 1:
+                eff_ver -= 1  # in-flight version hasn't produced output yet
         if best is None or mean > best[0]:
             best = (mean, slug, eff_ver, msg)
     return best
