@@ -320,7 +320,15 @@ def attempt(dry_run=False, allow_fallback=True, force_final=False):
                 log(f"AGI-3 SUBMIT OK {chosen['kernel']}: {r}")
                 out["agi3"] = chosen["kernel"]
             except Exception as e:
-                log(f"AGI-3 submit failed: {str(e)[:200]}")
+                msg = str(e)
+                if "kernelSessions.get" in msg or "PERMISSION_DENIED" in msg:
+                    log("AGI-3 submit blocked: Kaggle API now denies "
+                        "CreateCodeSubmission (kernelSessions.get 403). "
+                        "Submit via competition UI instead — see "
+                        "CLOUD_MIGRATION.md 'Kaggle API code-submission "
+                        "block'.")
+                else:
+                    log(f"AGI-3 submit failed: {msg[:200]}")
         else:
             out["agi3"] = "dry-run"
     return out
