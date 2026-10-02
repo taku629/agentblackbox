@@ -1109,3 +1109,18 @@ land in taaf-ag3-eval-out for retrieval from the ops VM.
   a null here does not kill the v3 arm for Saturday (model families and
   scale differ), but weakens the brevity-hint hypothesis — the A/B on
   the real model stays the arbiter.
+
+### v4 hard-cap follow-up (Oct 2) — applied to Saturday experimental arm
+
+- stuck_L2 single-scenario rerun, same protocol: v2 gen=1481/think=1293
+  (242.7s) vs v4 (v3 + "assistant text must stay under 120 words before
+  next tool call") gen=848/think=742 (148.1s) → ~43% fewer tokens and
+  output went straight to `python`/`action()` code.
+- Cross-run pattern: soft "keep compact" hint does not move tokens
+  (v3 even inflated stuck_L2 to 1637); an explicit word cap does.
+- Applied: prompts.py in bundle_fast gained the HARD CAP line ahead of
+  the soft hint; taaf-anim-flashnext-bundle-v3 re-uploaded (v4) and
+  HARD CAP verified in the served file. Saturday experimental arm now
+  carries the capped variant; control arm unchanged.
+- Sampling-variance note: single seed per scenario, v2 stuck_L2 itself
+  swung 928→1481 across runs — treat as directional, not conclusive.
