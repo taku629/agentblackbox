@@ -1187,3 +1187,21 @@ Saturday (UTC) GPU order: evalscan first (highest information), then
 queued AGI-3 pushes anim-v2 (control) + anim-flashnext (v4 HARD CAP).
 If quota/concurrency won't fit all three, AGI-3 pushes slip — the
 A/B experiment can wait a week; the medal math can't.
+
+### Oct 2 afternoon — AGI-2 variant staging + AGI-3 v5
+
+- evalscan hardened: dir_outputs -> /kaggle/working/inference_outputs
+  (pickles persist even if run times out); tlog() writes TTT/batch/total
+  timing to /kaggle/working/timing.log; analyze_evalscan.sh = download +
+  timing summary + select_bench in one command.
+- faircap fixed: queue is shared by 4 workers -> fair share is
+  4*remaining/qsize (was 4x too tight).
+- submit_ag2_xcalibur staged (sft139 -> xcalibur-aa2-sft-500 drop-in);
+  hold until evalscan shows whether failures are capability-bound.
+- AGI-3 v5 prompt staged in bundle_fast (PERSISTENT NOTES via `result`
+  echo — zero-plumbing cross-turn memory). NOT uploaded to the v3
+  dataset: Saturday's arm still tests v4 HARD CAP cleanly.
+- Dead ends re-measured on eval: dsl_all 0/120 tasks; identity golds
+  0/172; rigid-geo golds 0/172 — symbolic fallback fully dead.
+- Automation dispatch failed 3x today (ACU); manual path verified —
+  run submit_best.py from main session if Sat 04:45 tick fails too.
