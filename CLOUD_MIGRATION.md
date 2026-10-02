@@ -1088,3 +1088,24 @@ land in taaf-ag3-eval-out for retrieval from the ops VM.
   real grids; the other 116 emit `[[0]]` placeholders → LB 29.72 comes
   almost entirely from ~4 solved tasks. Even +1 task ≈ several points —
   candidate yield is THE lever.
+
+## Colab prompt A/B — v2 vs v3 brevity hint (Oct 2, T4 + Qwen3-4B thinking)
+
+- Proxy test: does the v3 prompt bundle's compact-reasoning line reduce
+  generated tokens/turn (the score-binding lever — median 2037 tok/turn,
+  ~8.7 tok/s/stream → tokens/turn is the only controllable budget)?
+- Setup: Qwen3-4B bf16 on T4, enable_thinking=True, temp 0.6 top_p 0.95
+  top_k 20, max_new 3072; 3 reconstructed scenarios (cold L1, stuck L2
+  sokoban, late L4 w/ 850s left); sys prompts = real assembled
+  _build_system_prompt output, v2 vs v3 (diff = the 3 v3 lines).
+- RESULT: v3 did NOT reduce tokens. gen_tokens v2=[910,928,1405]
+  v3=[1029,1637,1209] (mean +20%); think_tokens v2=[519,798,1259]
+  v3=[628,1431,999]. Worst in stuck_L2 (1637 vs 928) — the RESET hint
+  may have *added* deliberation. tool_call format 0/3 both variants;
+  action() text refs 2-3/3 both.
+- Follow-up: v4 = v3 + hard cap "assistant text must stay under 120
+  words before next tool call" — same-protocol check on stuck_L2.
+- Interpretation guardrails: 4B proxy vs 27B production, 1 seed/scenario;
+  a null here does not kill the v3 arm for Saturday (model families and
+  scale differ), but weakens the brevity-hint hypothesis — the A/B on
+  the real model stays the arbiter.
