@@ -1146,3 +1146,44 @@ land in taaf-ag3-eval-out for retrieval from the ops VM.
   Chrome access or manually by the user.
 - Saturday queue unchanged: kernel PUSHES use a different endpoint
   (PushKernel) — no evidence they are blocked; verify on first push.
+
+### AGI-2 medal push plan (Oct 1) — evalscan kernel
+
+Goal: +2.2 pts to reach ~top-40 territory (best 30.56, top40=32.78).
+
+Pipeline recap (arc-agi2-lb33-89-perfpatch, LB 30.56): per task → LoRA
+TTT (r256, 1 epoch on 16 augmented train samples) → turbo-DFS decode,
+8 subkeys per test input grouped into 4 batches (rotation family then
+transpose family), spend cap 1200s/task, DFS inner cap 540s, global
+12h-10min budget, L4x4 workers. Selection = score_kgmon vote count +
+aug NLL → top-2 unique grids = attempt_1/2.
+
+Measured this session:
+- dsl_all battery (31 solvers): 0/120 eval tasks, 0/172 test inputs.
+  Symbolic fallback contributes NOTHING on eval; the -dsl variant's
+  -0.83pt was pure displacement (DSL preds injected at attempt_1).
+  Do not retry DSL injection except strictly into attempt_2-and-only-
+  when-no-model-candidates — and even then expected gain ≈ 0.
+- Failure-mode question reframed: not yield (4-task submission.json is
+  a normal-run artifact; rerun processes all 120 test tasks), but
+  which tasks produce correct candidates and why the rest don't.
+
+evalscan kernel (takumuhata/arc-agi2-evalscan, submit_ag2_evalscan/):
+- Identical perfpatch code; starter.py whitelist removed so a NORMAL
+  run decodes all 120 evaluation tasks. Rerun path untouched.
+- Saves /kaggle/inference_outputs pickles into /kaggle/working (kernel
+  output), computes dsl_preds.pkl (analysis only, NOT injected), prints
+  per-task decode-coverage diagnostic + benchmark_selection_algos.
+- Answers on one ~10-12h L4x4 run: (a) do tail tasks starve under the
+  1200s×120/4 = 10h budget? (b) oracle headroom — how many test inputs
+  have the correct grid anywhere in candidates? (c) which selection
+  algo is best locally? (d) beam-score gap correct-vs-wrong.
+- Offline follow-up: arc-agi-2/dev/select_bench.py loads the saved
+  pickles + eval solutions → scores kgmon / probmul_3 / aug-family-
+  diverse attempt_2 / oracle. Decode is the expensive part; selection
+  is free — one run evaluates every strategy.
+
+Saturday (UTC) GPU order: evalscan first (highest information), then
+queued AGI-3 pushes anim-v2 (control) + anim-flashnext (v4 HARD CAP).
+If quota/concurrency won't fit all three, AGI-3 pushes slip — the
+A/B experiment can wait a week; the medal math can't.
