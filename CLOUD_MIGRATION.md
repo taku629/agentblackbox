@@ -1067,3 +1067,24 @@ land in taaf-ag3-eval-out for retrieval from the ops VM.
 
 - AGI-2: real local signal → can A/B test variants (perfpatch vs nvarc vs param tweaks) on Colab without Kaggle quota.
 - AGI-3: no sub-80GB proxy that preserves score signal (T4-4bit=0 signal, A100-40 can't fit 27B+). The Saturday Kaggle runs remain the only faithful eval — prompt A/B rides on the queued anim-v2/flashnext-v3 pair.
+
+### Tokenizer dead-TTT bug (Colab-only) + production verified alive (Oct 2)
+
+- The shrunk grids15 tokenizer is `WordLevel` (tokenizer.json): vocab has
+  'user'=11, 'assistant'=12, but the pretokenizer never emits them under
+  transformers 5.5.0/tokenizers-new → `encode('user')`→`[]` → collator's
+  np.where(USER/ASSISTANT) empty → ALL labels -100 → TTT loss=nan,
+  grad_norm=0 (complete no-op) on the Colab stack.
+- Fix (verified): before training, register them as specials —
+  `tokenizer.add_tokens([AddedToken("user", special=True, normalized=False),
+                        AddedToken("assistant", special=True, normalized=False)])`
+  → encode emits [14,11,10,...,14,12,10] as intended.
+- **Production is NOT affected**: perfpatch kernel log (downloaded via
+  `kaggle kernels output`) shows real `training_loss` 0.005→0.0001 at
+  global_step=128 on every task. Kaggle stack = transformers 4.55.4 /
+  unsloth 2025.9.7 / torch 2.8.0+cu128 on L4×4. LB30.56 already includes
+  working TTT — the fix is required only for Colab eval faithfulness.
+- Production candidate yield (submission.json audit): 4/120 tasks emit
+  real grids; the other 116 emit `[[0]]` placeholders → LB 29.72 comes
+  almost entirely from ~4 solved tasks. Even +1 task ≈ several points —
+  candidate yield is THE lever.
