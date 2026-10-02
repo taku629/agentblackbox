@@ -1045,3 +1045,25 @@ upload score/transcripts/provenance to `takumuhata/taaf-ag3-eval-out`.
 
 **Results flow:** MEAN line printed in cell output; artifacts also
 land in taaf-ag3-eval-out for retrieval from the ops VM.
+
+## Colab A100 reality check (Oct 2)
+
+- This account (Colab Pro, pay-as-you-go units) gets **A100-SXM4-40GB max** — no 80GB A100, no G4 (Pro+ only). Confirmed via torch.cuda.get_device_name: `NVIDIA A100-SXM4-40GB`, 42.48GB VRAM.
+- Consequence: 27B bf16 (54GB) and Qwen3.8-Flash-Next (~250GB MoE / ~65GB GPTQ) **cannot be served on Colab**. The AGI-3 v2-vs-v3 prompt A/B (`colab_ab_eval.ipynb`, commit d1e956b) is therefore blocked on this tier — it would need Pro+/G4 or Kaggle's RTX Pro 6000 (i.e. Saturday quota).
+- What DOES fit: the AGI-2 production pipeline — 4B bf16 (~8GB) + unsloth LoRA + turbo-DFS. Faithful local eval is possible.
+
+## AGI-2 faithful Colab eval (running Oct 2)
+
+`submit_ag2_perfpatch/colab_ag2_eval_v3.ipynb` (commit f4a1c25): production perfpatch cells verbatim (arc_loader/arc_decoder/arc_solver) + Colab patches + single-GPU starter on 12 public-eval tasks.
+
+- Model: `sorokin/qwen3_4b_grids15_sft139/transformers/bfloat16/1` via `kagglehub.model_download` → `/root/.cache/kagglehub/models/...` — pass through `os.environ['MODEL_DIR']`, NOT the hardcoded `/kaggle/input/models/...` (that path only exists on Kaggle).
+- Tasks: `takumuhata/arc-ag2-eval-json-public` (120 challenges+solutions, made public for anonymous fetch). **kagglehub `dataset_download` 403s on GetDataset even for public datasets on this runtime** — use plain `wget https://www.kaggle.com/api/v1/datasets/download/<slug>` instead.
+- arc_solver.py needs THREE path patches: `model_name` → `os.environ["MODEL_DIR"]`, `dir_outputs` → `/content/inference_outputs`, and `/kaggle/input/competitions/arc-prize-2026-arc-agi-2/` → `/content/data/` (the worker reads the challenges JSON itself — easy to miss; first run died on exactly this).
+- Subset: kernel's own 4 eval-gate tasks + 8 evenly-spread tasks (269e22fb, 3e6067c3, 5dbc8537, 7b80bb43, 9385bd28, b5ca7ac4, dbff022c, e3721c99) = 12 tasks, ~1.5-3h on A100, ~20-40 units.
+- Scoring: production `data.validate_submission` — local score is directly LB-comparable (120-task eval set; subset is a noisy proxy).
+- Colab GUI gotcha, confirmed again: multi-line cell edits corrupt text (leading chars dropped mid-cell). Edit the .ipynb locally and re-upload instead — safer than fighting the editor.
+
+## Where this leaves the loop
+
+- AGI-2: real local signal → can A/B test variants (perfpatch vs nvarc vs param tweaks) on Colab without Kaggle quota.
+- AGI-3: no sub-80GB proxy that preserves score signal (T4-4bit=0 signal, A100-40 can't fit 27B+). The Saturday Kaggle runs remain the only faithful eval — prompt A/B rides on the queued anim-v2/flashnext-v3 pair.
