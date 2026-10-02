@@ -34,12 +34,14 @@ def main():
         print("pending push queue is empty")
         return
 
-    # GPU pushes are confined to Saturdays (UTC): the weekly GPU budget is
-    # shared with other competitions and Sundays are reserved for RSNA.
+    # GPU pushes are confined to Saturdays before 15:00 UTC: the weekly GPU
+    # budget is shared with other competitions, Sundays must not be touched,
+    # and a ~6-8h kernel pushed after 15:00 could spill past midnight.
     # Set TAAF_PUSH_ANY_DAY=1 to bypass the gate.
+    now = datetime.now(timezone.utc)
     if (
         os.environ.get("TAAF_PUSH_ANY_DAY") != "1"
-        and datetime.now(timezone.utc).weekday() != 5
+        and (now.weekday() != 5 or now.hour >= 15)
     ):
         print("outside Saturday(UTC) push window; queue left for Saturday")
         return
