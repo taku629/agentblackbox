@@ -71,13 +71,28 @@ for k, vs in sorted(ac.items()):
     if mx > 0.1: gen_strong += 1
     else: gen_weak += 1
 import json
-sol = json.load(open('/home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2/arc-agi_evaluation_solutions.json'))
+base = '/home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2/'
+sol = json.load(open(base+'arc-agi_evaluation_solutions.json'))
+ch = json.load(open(base+'arc-agi_evaluation_challenges.json'))
 seen = set(ac)
-gen_none = sum(len(so) for k, so in sol.items() for i, _ in enumerate(so)
-               if (k, str(i)) not in seen)
+gen_none = 0
+by_class = collections.defaultdict(lambda: [0,0,0])  # class -> [gen, none, tot]
+for k, so in sol.items():
+    for i, gold in enumerate(so):
+        ti = ch[k]['test'][0]['input']
+        area_in, area_out = len(ti)*len(ti[0]), len(gold)*len(gold[0])
+        cl = 'same' if area_out == area_in else ('extract' if area_out < area_in else 'larger')
+        hit = (k, str(i)) in seen
+        gen_none += (not hit)
+        by_class[cl][0] += hit
+        by_class[cl][1] += (not hit)
+        by_class[cl][2] += 1
 print(f"\ntest-outputs with correct grid generated: {len(ac)} "
       f"(strong-beam {gen_strong}, weak-beam {gen_weak})")
 print(f"test-outputs where correct NEVER generated (capability miss): {gen_none}")
+print("by task class (generated / missed / total):")
+for cl, (g, n, t) in sorted(by_class.items()):
+    print(f"  {cl:8s} {g:3d} / {n:3d} / {t:3d}   gen-rate {g/max(t,1)*100:.0f}%")
 PY
 else
     echo "(no kernel log downloaded)"

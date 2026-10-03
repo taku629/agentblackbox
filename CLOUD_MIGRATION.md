@@ -1244,3 +1244,11 @@ A/B experiment can wait a week; the medal math can't.
   beam score, surfaces weak-but-correct candidates; kgmon works).
 - analyze_evalscan.sh now aggregates ALL_CORRECT lines into a
   generation-vs-selection split (strong/weak/never-generated).
+- TASK-CLASS hypothesis (whitelist n=1): eval output-shape classes:
+  same 84, extraction (output smaller) 30, larger 6. The only
+  whitelist miss (0934a4d8) is the only extraction task — if the
+  class systematically fails generation that's up to ~25% of tasks
+  (~7.5 LB pts) in play. analyze_evalscan now prints gen-rate per
+  class; if 'extract' gen-rate ~0, target it with crop-aware decode
+  or an extraction hint prompt (xcalibur probe: extend whitelist to
+  evalscan's missed IDs).
