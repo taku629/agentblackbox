@@ -1,6 +1,6 @@
 {
  "id": "takumuhata/arc-agi2-xcalibur",
- "title": "ARC AGI2 Perfpatch + xcalibur-aa2-sft-500 swap",
+ "title": "arc agi2 xcalibur",
  "code_file": "arc-agi2-xcalibur.ipynb",
  "language": "python",
  "kernel_type": "notebook",

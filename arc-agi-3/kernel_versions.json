@@ -1,7 +1,8 @@
 {
-  "takumuhata/arc3-duck-anim-flashnext": 1,
   "takumuhata/arc3-duck-qwen3-8-flash-next-nvfp4-mtp": 1,
   "takumuhata/arc3-duck-flash-next-nvfp4-mtp-b": 1,
   "takumuhata/arc3-duck-qwen3-8-27b": 2,
-  "takumuhata/forge-pathfinder-bfs-agent": 7
+  "takumuhata/forge-pathfinder-bfs-agent": 7,
+  "takumuhata/arc3-duck-anim-v2": 2,
+  "takumuhata/arc3-duck-anim-flashnext-v3": 2
 }

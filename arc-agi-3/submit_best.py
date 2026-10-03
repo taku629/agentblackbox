@@ -42,8 +42,8 @@ VERMAP_FILE = HERE / "kernel_versions.json"
 # (kernel slug, pinned kernel_version or None -> map file, submission message).
 # Ordered by preference when verified means tie; highest mean wins overall.
 CANDIDATES = [
-    ("takumuhata/arc3-duck-anim-flashnext", None,
-     "TAAF anim-aware solver + Qwen3.8 Flash-Next NVFP4 MTP (hybrid)"),
+    ("takumuhata/arc3-duck-anim-flashnext-v3", None,
+     "TAAF anim-aware solver + Qwen3.8 Flash-Next NVFP4 MTP (hybrid, HARD CAP prompt v4)"),
     ("takumuhata/arc3-duck-anim-v2", None,
      "TAAF anim-aware solver v2 (coverage hint) + Qwen3.8 Flash-Next NVFP4 MTP"),
     ("takumuhata/arc3-duck-qwen3-8-flash-next-nvfp4-mtp", None,
@@ -60,7 +60,7 @@ CANDIDATES = [
 # QUEUED/RUNNING so kernels_output serves that empty tree, hiding the last
 # completed run. A fresh completed run's own summary/score.json always wins.
 KNOWN_MEAN = {
-    "takumuhata/arc3-duck-anim-flashnext": 8.21,  # v1 run (LB 2.60)
+    "takumuhata/arc3-duck-anim-flashnext-v3": 8.21,  # v1 run (LB 2.60)
     "takumuhata/arc3-duck-qwen3-8-27b": 4.97,     # v2 run (patched agent)
 }
 STRONG_MEAN = 5.5   # submit early only if a candidate clearly beats 27B (4.79)

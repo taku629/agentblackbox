@@ -1205,3 +1205,26 @@ A/B experiment can wait a week; the medal math can't.
   0/172; rigid-geo golds 0/172 — symbolic fallback fully dead.
 - Automation dispatch failed 3x today (ACU); manual path verified —
   run submit_best.py from main session if Sat 04:45 tick fails too.
+
+### Oct 3 (Sat) — 05:00 wake: manual queue run + API block lifted
+
+- Automation dispatch failed a 4th time at 04:45 UTC; ran the queue
+  manually from the main session as planned.
+- AGI-3 A/B pushed: arc3-duck-anim-v2 v2 (control arm) QUEUED +
+  arc3-duck-anim-flashnext-v3 v2 (v4 HARD CAP arm) QUEUED. Both GPU
+  batch slots occupied (~6-8h).
+- SLUG CORRECTION: `arc3-duck-anim-flashnext` never existed — the real
+  kernel is `arc3-duck-anim-flashnext-v3` (created Sep 21; v1 = the
+  8.21-mean run we've been submitting). submit_best CANDIDATES +
+  KNOWN_MEAN repointed to -v3. kernel_versions.json fixed. Metadata
+  title in submit_ag3_hybrid set to resolve to the -v3 slug.
+- Kaggle API code-submission block LIFTED: today's AGI-3 API submit
+  succeeded (ref 56789981, -v3 v1, PENDING). No more daily UI submits
+  needed unless it regresses. Yesterday's AGI-3 = 3.33; AGI-2 = 29.72.
+- AGI-2 daily submitted via API: ref 56789960.
+- evalscan push failed on "Maximum batch GPU session count of 2" —
+  stays in pending_pushes.json; retry when a slot frees (~11-13 UTC).
+  Kernel-metadata titles fixed to resolve to their ids (evalscan,
+  faircap, xcalibur). One-time wake reminder set for ~11:30 UTC;
+  if no slot by ~13:00 UTC, cancel anim-v2 (control — baseline 8.21
+  already known) to start evalscan before the 15:00 UTC gate.

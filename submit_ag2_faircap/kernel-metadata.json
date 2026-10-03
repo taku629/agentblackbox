@@ -1,6 +1,6 @@
 {
  "id": "takumuhata/arc-agi2-faircap",
- "title": "ARC AGI2 Faircap (cost-ordered queue + dynamic spend cap)",
+ "title": "arc agi2 faircap",
  "code_file": "arc-agi2-faircap.ipynb",
  "language": "python",
  "kernel_type": "notebook",

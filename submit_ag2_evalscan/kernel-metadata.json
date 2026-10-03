@@ -1,6 +1,6 @@
 {
  "id": "takumuhata/arc-agi2-evalscan",
- "title": "ARC AGI2 Evalscan (full-eval decode + selection artifacts)",
+ "title": "arc agi2 evalscan",
  "code_file": "arc-agi2-evalscan.ipynb",
  "language": "python",
  "kernel_type": "notebook",
