@@ -52,5 +52,37 @@ else
 fi
 
 echo
+echo "== ALL_CORRECT coverage (generation vs selection split) =="
+LOG=$(ls *.log 2>/dev/null | head -1)
+if [ -n "$LOG" ]; then
+    python3 - <<'PY'
+import re, collections, glob
+log = glob.glob('/tmp/evalscan/*.log')[0]
+ac = collections.defaultdict(list)
+for ln in open(log, errors='replace'):
+    m = re.search(r'ALL_CORRECT:\s*([\d.]+)\s*-\s*([\d.]+)\s*(\d+x\d+)\s*\[([a-f0-9]+)_(\d+)', ln)
+    if m:
+        ac[(m.group(4), m.group(5))].append(float(m.group(1)))
+gen_strong = gen_weak = gen_none = 0
+for k, vs in sorted(ac.items()):
+    mx = max(vs)
+    tag = 'strong' if mx > 0.1 else 'weak'
+    print(f"{k[0]}_{k[1]}: correct-in {len(vs)} subkeys, max {mx:.4f} [{tag}]")
+    if mx > 0.1: gen_strong += 1
+    else: gen_weak += 1
+import json
+sol = json.load(open('/home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2/arc-agi_evaluation_solutions.json'))
+seen = set(ac)
+gen_none = sum(len(so) for k, so in sol.items() for i, _ in enumerate(so)
+               if (k, str(i)) not in seen)
+print(f"\ntest-outputs with correct grid generated: {len(ac)} "
+      f"(strong-beam {gen_strong}, weak-beam {gen_weak})")
+print(f"test-outputs where correct NEVER generated (capability miss): {gen_none}")
+PY
+else
+    echo "(no kernel log downloaded)"
+fi
+
+echo
 echo "== selection strategies vs eval solutions =="
 python3 /home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2/dev/select_bench.py "$OUT/inference_outputs"

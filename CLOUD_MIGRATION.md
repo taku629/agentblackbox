@@ -1228,3 +1228,19 @@ A/B experiment can wait a week; the medal math can't.
   faircap, xcalibur). One-time wake reminder set for ~11:30 UTC;
   if no slot by ~13:00 UTC, cancel anim-v2 (control — baseline 8.21
   already known) to start evalscan before the 15:00 UTC gate.
+
+### Oct 3 — evidence from the whitelist run's log (free data)
+
+- The 4-task whitelist kernel output keeps the real production log:
+  per-task TOTAL 582/647/1103/1239s; TTT 208-828s (35-67% of task
+  time — TTT, not decode, dominates; 128 steps).
+- submission.json carries all 120 tasks (canned baseline + 4 fresh
+  decodes). Vs public eval solutions: whitelist 3/4 correct
+  (36a08778, 981571dc, aa4ec2a5; 0934a4d8 missed — correct grid never
+  generated: capability miss, the xcalibur target class).
+- The log emits ALL_CORRECT lines per decoded subkey (fires only when
+  gold known): correct grid found in 12/16/8 aug variants on the 3
+  solved tasks — beam scores range 0.97 down to ~0 (vote-count, not
+  beam score, surfaces weak-but-correct candidates; kgmon works).
+- analyze_evalscan.sh now aggregates ALL_CORRECT lines into a
+  generation-vs-selection split (strong/weak/never-generated).
