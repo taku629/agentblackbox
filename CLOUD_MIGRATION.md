@@ -1276,3 +1276,8 @@ A/B experiment can wait a week; the medal math can't.
   examples -> compounding miss risk. Check ex-field diversity per
   task in evalscan subkeys; possible fix: more example-subset
   coverage per task, or raise max_seq_length on big-grid tasks.
+- Starvation pre-estimate (no GPU): crude cell-cost model fit on the
+  4 whitelist anchors -> ~6.1h/worker vs 11.8h budget (probably OK),
+  BUT cost correlates weakly with actual time (0934a4d8 cost 4593 ran
+  582s vs 36a08778 cost 3048 ran 1103s — decode difficulty, not grid
+  size, drives duration). faircap cost now includes train outputs.
