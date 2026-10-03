@@ -1252,3 +1252,11 @@ A/B experiment can wait a week; the medal math can't.
   class; if 'extract' gen-rate ~0, target it with crop-aware decode
   or an extraction hint prompt (xcalibur probe: extend whitelist to
   evalscan's missed IDs).
+- evalscan cell9 bug fixed: loaded decode results from the dead path
+  /kaggle/inference_outputs (would crash -> skip cell10 analysis);
+  now /kaggle/working/inference_outputs like cell10. Notebook is
+  syntax-verified; starter queues all 120 eval tasks.
+- submit_ag2_diverse2 staged (evalscan base + score_kgmon_diverse):
+  attempt_1 = kgmon top-1, attempt_2 = best candidate whose dominant
+  aug-family (mod chain minus permute*) differs from top-1's. Push
+  it only if evalscan's select_bench shows diverse_rank2 > kgmon.

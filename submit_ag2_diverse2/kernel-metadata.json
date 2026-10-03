@@ -1,0 +1,24 @@
+{
+ "id": "takumuhata/arc-agi2-diverse2",
+ "title": "arc agi2 diverse2",
+ "code_file": "arc-agi2-diverse2.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": false,
+ "competition_sources": [
+  "arc-prize-2026-arc-agi-2"
+ ],
+ "dataset_sources": [],
+ "kernel_sources": [
+  "sorokin/pip-install-unsloth-flash-patch"
+ ],
+ "model_sources": [
+  "sorokin/qwen3_4b_grids15_sft139/Transformers/bfloat16/1"
+ ],
+ "category_ids": [],
+ "docker_image_version": "n/a",
+ "no_gpu_session_timeout_minutes": 43200
+}
