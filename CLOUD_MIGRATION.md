@@ -1260,3 +1260,13 @@ A/B experiment can wait a week; the medal math can't.
   attempt_1 = kgmon top-1, attempt_2 = best candidate whose dominant
   aug-family (mod chain minus permute*) differs from top-1's. Push
   it only if evalscan's select_bench shows diverse_rank2 > kgmon.
+- AGI-3 landscape (tufalabs duck-harness writeup): our stack derives
+  from this harness (their 27B-FP8 baseline: mean 1.60); public top
+  = executable world models (RGB/OpenCode 58.12%, Symbolica 36.08%)
+  — build a code simulator of game dynamics, plan internally, spend
+  fewest real actions. Frontier-model capability dominates; within
+  1-GPU constraints the levers are world-model prompting (v5 staged),
+  action efficiency, exploration heuristics. Our 8.21 local mean
+  already beats the reference harness by ~5x with same-class models.
+- select_bench: per-class oracle + strategy scores (same/extract/
+  larger) — total 172 test outputs (29 extract, 6 larger, 85 same).

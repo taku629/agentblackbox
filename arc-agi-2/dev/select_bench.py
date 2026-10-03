@@ -141,19 +141,34 @@ def main():
         for i, r in enumerate(replies):
             gold[f"{k}_{i}"] = np.asarray(r)
 
+    # task class: compare input vs gold output area
+    tclass = {}
+    for k, replies in so.items():
+        for i, r in enumerate(replies):
+            ti = ch[k]['test'][i]['input']
+            ai, ao = len(ti)*len(ti[0]), len(r)*len(r[0])
+            tclass[f"{k}_{i}"] = ('same' if ao == ai
+                                  else 'extract' if ao < ai else 'larger')
+
     # oracle headroom: correct grid exists anywhere in candidates?
     oracle = 0.0
     has_any = 0.0
+    ocl = defaultdict(float)
+    tcl = defaultdict(float)
     for bk, g in gold.items():
         task = bk.split("_")[0]
         w = 1 / n_tests[task]
+        tcl[tclass[bk]] += w
         cands = decoded.get(bk, {})
         grids = {hashable(s["solution"]) for s in cands.values()}
         if len(grids):
             has_any += w
         if hashable(g) in grids:
             oracle += w
+            ocl[tclass[bk]] += w
     print(f"oracle (correct grid present in candidates): {oracle:.2f}")
+    for cl in sorted(tcl):
+        print(f"  class {cl:7s}: oracle {ocl[cl]:.2f} / {tcl[cl]:.2f} possible")
     print(f"coverage (any candidate produced): {has_any:.2f} "
           f"({len(decoded)}/{len(gold)} test inputs)")
 
@@ -165,13 +180,16 @@ def main():
 
     for name, fn in strategies.items():
         score = 0.0
+        scl = defaultdict(float)
         for bk, g in gold.items():
             task = bk.split("_")[0]
             w = 1 / n_tests[task]
             order = fn(decoded.get(bk, {}))
             if any(np.array_equal(g, cand) for cand in order[:2]):
                 score += w
-        print(f"{name}: {score:.2f}/120")
+                scl[tclass[bk]] += w
+        print(f"{name}: {score:.2f}/120  " +
+              " ".join(f"[{cl} {scl[cl]:.1f}]" for cl in sorted(tcl)))
 
 
 if __name__ == "__main__":
