@@ -1270,3 +1270,9 @@ A/B experiment can wait a week; the medal math can't.
   already beats the reference harness by ~5x with same-class models.
 - select_bench: per-class oracle + strategy scores (same/extract/
   larger) — total 172 test outputs (29 extract, 6 larger, 85 same).
+- Mechanism note: subkey 'ex{N}' encodes WHICH train examples fit
+  the context window (cut_to_len drops examples on long inputs).
+  30x30 tasks (most extraction-type) decode with FEWER train
+  examples -> compounding miss risk. Check ex-field diversity per
+  task in evalscan subkeys; possible fix: more example-subset
+  coverage per task, or raise max_seq_length on big-grid tasks.
