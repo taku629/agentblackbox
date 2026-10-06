@@ -136,17 +136,52 @@ def fair_share_seconds(end_time, tasks_left, n_workers=4, floor=600.0, ceil=2400
     return min(ceil, max(floor, remaining / mine))
 
 
+class WaitQueue:
+    """Queue view for a second pass fed by workers that are still in their first pass.
+    empty() blocks until an item arrives or every producer has reported done, so the kernel's
+    `while not queue.empty(): key = queue.get()` loop works unchanged. `done` is a queue the
+    producers put one token into when they finish; qsize() adds the 4 sentinels the kernel's
+    tasks_left arithmetic subtracts."""
+
+    def __init__(self, q, done, n_workers=4, poll=2.0, sleep=time.sleep):
+        self.q, self.done, self.n, self.poll, self.sleep, self.buf = q, done, n_workers, poll, sleep, []
+
+    def empty(self):
+        while not self.buf:
+            try:
+                self.buf.append(self.q.get_nowait())
+            except Exception:                                  # noqa: BLE001  (queue.Empty, also via a Manager proxy)
+                if self.done.qsize() >= self.n and self.q.qsize() == 0:
+                    return True
+                self.sleep(self.poll)
+        return False
+
+    def get(self):
+        return None if self.empty() else self.buf.pop(0)
+
+    def qsize(self):
+        return self.q.qsize() + len(self.buf) + 4
+
+
+def unsettled(res):
+    """True when some test input of the task has no grid backed by MIN_AGREE views (or no candidate at all)."""
+    return any(agreement(res["by_input"].get(bk, {})) < MIN_AGREE for bk in res["inputs"])
+
+
 def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_left=0):
     """Decode every test input of one task. ctx carries what worker() already
     has: model, tokenizer, formatter, ArcDataset, inference_turbo_dfs,
     calc_scores, arc_token_ids, EOS_ID, PAD_ID, max_new_tokens, max_score,
-    max_seq_length, dir_outputs, rank."""
+    max_seq_length, dir_outputs, rank. Optional: file_tag (appended to every
+    file name, e.g. ".runm2" for a second model's candidates) and cap_ceil
+    (upper bound of the fair-share cap)."""
     lv = dict(LEVERS_OFF)
     lv.update(levers or {})
     model, tokenizer, formatter = ctx["model"], ctx["tokenizer"], ctx["formatter"]
     rank, max_new, max_score = ctx["rank"], ctx["max_new_tokens"], ctx["max_score"]
     in_len = ctx["max_seq_length"] - max_new
-    task_cap = fair_share_seconds(end_time, tasks_left) if lv["faircap"] else BASE_CAP
+    task_cap = fair_share_seconds(end_time, tasks_left, ceil=ctx.get("cap_ceil", 2400.0)) if lv["faircap"] else BASE_CAP
+    file_tag = ctx.get("file_tag", "")
     stats = defaultdict(int)
     by_input = defaultdict(dict)                 # base key -> {file name: [sample]}
     known_scores = {}
@@ -189,7 +224,7 @@ def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_l
                 known_scores[grid_id] = augmented_scores
             decoded_result.append({"beam_score": beam_score, "score_aug": augmented_scores, "solution": solution})
         if decoded_result:
-            name = subkey + suffix
+            name = subkey + file_tag + suffix
             with bz2.BZ2File(os.path.join(ctx["dir_outputs"], name), "w") as f:
                 pickle.dump(decoded_result, f)
             by_input[bk][name] = decoded_result
@@ -283,7 +318,7 @@ def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_l
 
     if any(v != LEVERS_OFF[k] for k, v in lv.items()):
         print(f"[Rank {rank}] gen_boost levers={lv} cap={task_cap:.0f}s stats={dict(stats)}")
-    return {"stats": dict(stats), "by_input": by_input, "task_cap": task_cap}
+    return {"stats": dict(stats), "by_input": by_input, "task_cap": task_cap, "inputs": input_keys}
 
 
 # ------------------------------------------------------------------- decision
@@ -619,6 +654,45 @@ def selftest():
     json.dump(pr[0], open(os.path.join(pd2, "gold_nll_rank0.jsonl"), "w"))
     assert gen_autopsy.parse_gold_nll(pd2)["aaaa0003_0"]["n_tok"] == L
 
+    # T9 union plumbing: a second model's files carry a tag, load under the same input, and add votes
+    d = tempfile.mkdtemp()
+    sys.stdout = quiet
+    try:
+        ra = decode_task(ctx_for(lm, d), multi("aaaa0001"), time.time(), time.time() + 600, None)
+        rb = decode_task(dict(ctx_for(lm, d), file_tag=".runm2"), multi("aaaa0001"), time.time(), time.time() + 600, None)
+        rc = decode_task(dict(ctx_for(lm, tempfile.mkdtemp()), cap_ceil=700.0), multi("aaaa0003"), time.time(),
+                         time.time() + 9e6, {"faircap": True})
+    finally:
+        sys.stdout = real_stdout
+    both = load(d)
+    assert len(both) == 32 and sum(k.endswith(".runm2") for k in both) == 16
+    assert same({k: v for k, v in both.items() if not k.endswith(".runm2")}, base1)
+    assert not unsettled(ra) and not unsettled(rb) and unsettled(rc) and rc["task_cap"] == 700.0 and ra["inputs"] == ["aaaa0001_0"]
+    dec = arc_decoder.ArcDecoder(types.SimpleNamespace(queries={}, replies={}), n_guesses=2)
+    dec.load_decoded_results(d)
+    cands = select_v2.group(dec.decoded_results["aaaa0001_0"])
+    assert list(dec.decoded_results) == ["aaaa0001_0"] and max(c["n_views"] for c in cands) == 32
+    import queue as _q
+    import threading
+    q2, done = _q.Queue(), _q.Queue()
+    wq = WaitQueue(q2, done, n_workers=2, poll=0.01)
+    got = []
+
+    def consume():
+        while not wq.empty():
+            got.append(wq.get())
+    th = threading.Thread(target=consume)
+    th.start()
+    q2.put("t1")
+    done.put(1)
+    time.sleep(0.05)
+    q2.put("t2")                                                   # arrives while one producer is still running
+    time.sleep(0.05)
+    assert th.is_alive() and got == ["t1", "t2"] and wq.qsize() == 4
+    done.put(1)
+    th.join(2)
+    assert not th.is_alive() and wq.get() is None
+
     # T7 decision rule
     base = {"n_inputs": 172, "zero_cand": 0, "zero_by_class": {}, "wrong_only": 90,
             "gold_bins": {"p>=.8": 30, "p .5-.8": 8, "p .3-.5": 1, "p .2-.3": 0},
@@ -634,7 +708,8 @@ def selftest():
     print(f"selftest ok (torch {torch.__version__}, fake LM, {lm.calls} forward calls): levers-off output identical to the "
           "production decode block on 3 tasks; greedy NLL == DFS NLL; G1/G3/G2 produce the expected files, "
           "leave settled inputs untouched and respect the time gates; probe_gold reports the exact gold NLL "
-          "without changing any output; decide() rules hold")
+          "without changing any output; a tagged second-model pass unions under the same input; WaitQueue "
+          "waits for late producers; decide() rules hold")
 
 
 if __name__ == "__main__":

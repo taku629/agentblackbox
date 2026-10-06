@@ -3,6 +3,7 @@
     python3 swap_eval.py panel   <baseline inference_outputs> [--n 24] [--timing timing.log]
     python3 swap_eval.py compare <baseline inference_outputs> <candidate inference_outputs>
                                  [--base-nll DIR] [--cand-nll DIR] [--name xcalibur]
+    python3 swap_eval.py union   <model A inference_outputs> <model B inference_outputs>
     python3 swap_eval.py --selftest
 
 Three stages, cheapest first (a 12 h full run is the last step, not the first):
@@ -161,6 +162,68 @@ def cmd_compare(base_store, cand_store, base_nll=None, cand_nll=None, name="cand
     return {"verdict": verdict, "gained": gained, "lost": lost, "n": len(keys), "transitions": dict(trans)}
 
 
+TAG2 = ".runm2"
+
+
+def cmd_union(a_store, b_store, name="B"):
+    """Would decoding with BOTH models beat either alone? Uses two single-model runs on the same
+    tasks (e.g. the sft139 panel and the xcalibur panel) and replays selection on the merged pools.
+    `fallback` is what make_union_kernel.py builds: model B only on tasks model A left unsettled."""
+    gold, queries, _, _ = select_v2.load_eval()
+    A, B = select_v2.load_candidates(a_store), select_v2.load_candidates(b_store)
+    tasks = {k.split("_")[0] for k in A} & {k.split("_")[0] for k in B}
+    if not tasks:
+        tasks = {f.split("_")[0] for f in os.listdir(b_store)}
+    keys = sorted(k for k in gold if k.split("_")[0] in tasks)
+    if not keys:
+        sys.exit("the two runs share no decoded task")
+    kg = select_v2.STRATEGIES["kgmon"]
+
+    def tag(d):
+        return {k.replace(".out", TAG2 + ".out"): v for k, v in d.items()}
+
+    def top_views(d):
+        return max((c["n_views"] for c in select_v2.group(d)), default=0)
+
+    unsettled_task = {k.split("_")[0] for k in keys if top_views(A.get(k, {})) < 3}
+    rows = []
+    for k in keys:
+        a, b = A.get(k, {}), B.get(k, {})
+        u = {**a, **tag(b)}
+        f = u if k.split("_")[0] in unsettled_task else a
+        g = gold[k]
+        gen = lambda d: any(np.array_equal(x["solution"], g) for x in d.values())      # noqa: E731
+        rows.append(dict(k=k, genA=gen(a), genB=gen(b), pA=select_v2.hit(kg(a), g), pB=select_v2.hit(kg(b), g),
+                         pU=select_v2.hit(kg(u), g), pF=select_v2.hit(kg(f), g),
+                         unsettled=k.split("_")[0] in unsettled_task))
+    n = len(rows)
+    c = lambda key: sum(r[key] for r in rows)                                          # noqa: E731
+    b_only = [r for r in rows if r["genB"] and not r["genA"]]
+    a_only = [r for r in rows if r["genA"] and not r["genB"]]
+    print(f"{n} test inputs from {len(tasks)} tasks decoded by both models")
+    print(f"gold generated: A {c('genA')}, {name} {c('genB')}, either {sum(r['genA'] or r['genB'] for r in rows)} "
+          f"(only A {len(a_only)}, only {name} {len(b_only)})")
+    print(f"pass@2 with kgmon: A {c('pA')}, {name} {c('pB')}, full union {c('pU')}, fallback union {c('pF')}")
+    hurt = [r["k"] for r in rows if r["pA"] and not r["pF"]]
+    reach = sum(r["unsettled"] for r in b_only)
+    share = len(unsettled_task) / len(tasks)
+    print(f"tasks model A left unsettled (<3 agreeing views on some input): {len(unsettled_task)}/{len(tasks)} "
+          f"({share * 100:.0f}%) -> pass 2 costs about that share of one model's run time")
+    print(f"inputs only {name} generated: {len(b_only)}, of which {reach} are in unsettled tasks (reachable by the fallback union)")
+    if hurt:
+        print("inputs model A got right that the fallback union loses:", " ".join(hurt))
+    gain = c("pF") - c("pA")
+    if gain >= 2 and len(hurt) <= 1:
+        verdict = f"build the union kernel: fallback union gains {gain} input(s) over A with {len(hurt)} regression(s)"
+    elif c("pB") > c("pA") and c("pB") >= c("pF"):
+        verdict = f"swap, do not union: {name} alone ({c('pB')}) is at least as good as the union ({c('pF')}) for half the time"
+    else:
+        verdict = f"no union: fallback union {c('pF')} vs A {c('pA')} (gain {gain}, regressions {len(hurt)})"
+    print("VERDICT:", verdict)
+    return {"n": n, "pA": c("pA"), "pB": c("pB"), "pU": c("pU"), "pF": c("pF"), "b_only": len(b_only),
+            "reachable": reach, "unsettled_share": share, "hurt": hurt, "verdict": verdict}
+
+
 def selftest():
     import bz2
     import contextlib
@@ -254,9 +317,29 @@ def selftest():
         assert r["n"] == sum(len([b_ for b_ in gold if b_.startswith(t + "_")]) for t in ids) and zero_ids
         assert r["transitions"].get(("zero", "zero"), 0) >= 1 and "NOTE: without --cand-nll" not in txt
         assert "NOTE: without --cand-nll" in run(base_plan)[1]
+        # union: B generates what A only nearly got; A's settled wins stay A's
+        import shutil
+        ua, ub = os.path.join(d, "ua"), os.path.join(d, "ub")
+        write(ua, base_plan, only=set(ids))
+        write(ub, lambda i, t: "generated" if t in near_ids[:4] else ("far_or_shape" if t in gen_ids[:2] else base_plan(i, t)),
+              only=set(ids))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            u = cmd_union(ua, ub, name="xcal")
+        assert u["b_only"] >= 4 and u["pU"] >= u["pA"] and u["pF"] >= u["pA"] and not u["hurt"], u
+        assert u["pF"] == u["pA"], u                    # every synthetic input has 3 agreeing views -> nothing is unsettled
+        assert u["verdict"].startswith(("no union", "swap")) and u["reachable"] == 0
+        for f in os.listdir(ua):                         # make A's near misses unsettled: keep a single view each
+            if f.split(".")[0].split("_")[0] in near_ids and not f.endswith("ex01"):
+                os.remove(os.path.join(ua, f))
+        with contextlib.redirect_stdout(out):
+            u2 = cmd_union(ua, ub, name="xcal")
+        assert u2["reachable"] >= 4 and u2["pF"] >= u2["pA"] + 4 and u2["verdict"].startswith("build the union"), u2
+        shutil.rmtree(ua)
     assert pick_panel(rows, 4)[0] and len(pick_panel(rows, 200)[0]) <= len(kinds)
     print("selftest ok: 24-task panel is stratified (6 generated guard + misses by kind) and spread over prompt size; "
-          "compare gives reject / promote / inconclusive on identical, better, worse and NLL-only-better candidates")
+          "compare gives reject / promote / inconclusive on identical, better, worse and NLL-only-better candidates; "
+          "union replays kgmon on the merged pools and only recommends a build when the fallback design gains")
 
 
 if __name__ == "__main__":
@@ -268,6 +351,8 @@ if __name__ == "__main__":
     elif a[0] == "panel":
         n = int(a[a.index("--n") + 1]) if "--n" in a else 24
         cmd_panel(a[1], n, a[a.index("--timing") + 1] if "--timing" in a else None)
+    elif a[0] == "union":
+        cmd_union(a[1], a[2], a[a.index("--name") + 1] if "--name" in a else "B")
     elif a[0] == "compare":
         opt = {k: a[a.index(k) + 1] for k in ("--base-nll", "--cand-nll", "--name") if k in a}
         cmd_compare(a[1], a[2], opt.get("--base-nll"), opt.get("--cand-nll"), opt.get("--name", "candidate"))
