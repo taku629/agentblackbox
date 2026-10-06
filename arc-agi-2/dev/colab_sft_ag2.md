@@ -1,107 +1,60 @@
 # Colab: SFT of the AGI-2 base checkpoint -> private Kaggle Model
 
 Run this only if `gen_autopsy.py` section 4 says `SFT plausible` or `mixed`
-(and, better, after `swap_eval.py compare` shows xcalibur moved the gold NLL).
-Nothing below pushes a kernel or submits; the last step uploads a private model.
+(and, better, after `swap_eval.py compare` shows the swap moved the gold NLL).
+Nothing below pushes a kernel or submits; the last cell uploads a private model.
 
-Status: the script is verified on CPU with a tiny random model
-(`sft_ag2.py --selftest`). No preset has been run on a GPU yet -- the first
-real run is the hardware test. Memory/time figures in the script are estimates.
+Status: the trainer is verified on CPU with a tiny random model
+(`sft_ag2.py --selftest`) and the notebook generator's `--selftest` checks that every
+embedded file lands byte-identical. No preset has been run on a GPU yet -- the first real
+run is the hardware test. Memory/time figures are estimates.
 
-## 0. What to upload to the runtime
+## 0. Build the notebook (ops VM, ~10 s)
 
-Build one archive on the ops VM (keeps the repo layout, which the scripts rely on):
+    python3 arc-agi-2/dev/make_colab_sft_nb.py --slug qwen3-4b-grids15-sft-a
+    # -> arc-agi-2/colab_sft_ag2.ipynb (~0.6 MB)
 
-    cd <repo>
-    tar czf /tmp/sft_bundle.tgz \
-      arc-agi-2/dev/sft_ag2.py arc-agi-2/dev/check_sft_data.py arc-agi-2/dev/check_swap_model.py \
-      submit_ag2_perfpatch/out/arc_loader.py \
-      arc-agi-2/arc-agi_training_challenges.json arc-agi-2/arc-agi_training_solutions.json \
-      arc-agi-2/arc-agi_evaluation_challenges.json arc-agi-2/arc-agi_evaluation_solutions.json
+The notebook embeds the 6 scripts and the 4 public ARC-AGI-2 JSONs as a zlib+base64 blob,
+so the ONLY thing ever uploaded by hand is the Kaggle credential. `--slug` becomes both the
+Kaggle model name and the Drive run directory. `--synth-share 0.0` emits the no-synthetic
+control arm instead of the default 0.30 mix.
 
-Upload `sft_bundle.tgz` through the Files panel (one file; multi-select uploads
-deliver only the first). The evaluation files are needed for the contamination
-guard only -- they are never trained on.
+## 1. Colab setup (the only manual steps)
 
-## 1. Runtime setup (one code cell each; do not type in the Terminal -- it drops characters)
+1. colab.research.google.com -> File > Upload notebook -> `colab_sft_ag2.ipynb`
+2. Runtime > Change runtime type -> GPU (T4 free tier works; L4/A100 finish sooner)
+3. Key icon (secrets) -> add `KAGGLE_CREDENTIALS` = the contents of
+   `~/.kaggle/credentials.json` from the ops VM (the OAuth pair, not the legacy key)
+4. Runtime > Run all
 
-    !mkdir -p /content/repo && tar xzf /content/sft_bundle.tgz -C /content/repo
-    !pip -q install "transformers>=4.55,<5" peft safetensors "kaggle>=2"
-    !nvidia-smi --query-gpu=name,memory.total --format=csv
+Checkpoint + generated data land on Google Drive (`arc_sft/<slug>/`), so a recycled
+runtime costs nothing: Run all again and the train cell resumes from `ckpt.pt`.
 
-Kaggle credentials: the `KAGGLE_CREDENTIALS` Colab secret is stale (cannot see
-private models). Use the OAuth pair from the ops VM, pasted in the Terminal so
-it does not land in the notebook:
+## 2. What it does (all automatic)
 
-    mkdir -p /root/.kaggle
-    echo <access_token> > /root/.kaggle/access_token
-    echo <credentials.json base64> | base64 -d > /root/.kaggle/credentials.json
+GPU detect -> pip deps -> Kaggle auth -> unpack embedded files to /content/repo ->
+download the base checkpoint -> build data (gen_synth 3,000 + Nabidnur 410) and run the
+contamination/format check -> train with the preset for your GPU -> gate -> upload as a
+private Kaggle Model -> re-download it and `check_swap_model` the uploaded copy.
 
-## 2. Base checkpoint + self-test
+Data mix (the `@share` sampling weights from part 14a): public train 65% /
+gen_synth 3,000 tasks 30% / Nabidnur 410 tasks 5%; val = 50 public-train tasks held out
+first (`--val-from first`). Thirty percent is a starting point, not a measured optimum --
+settle it with a 0.0-vs-0.30 panel A/B.
 
-    !kaggle models instances versions download sorokin/qwen3_4b_grids15_sft139/transformers/bfloat16/1 -p /content/base --untar
-    !cd /content/repo && python arc-agi-2/dev/check_swap_model.py /content/base /content/base
-    !cd /content/repo && python arc-agi-2/dev/check_sft_data.py --selftest && python arc-agi-2/dev/sft_ag2.py --selftest
+Per-cell "this looks right" lines, the T4 decision table, the gate rules and the hand-over:
+`colab_sft_runbook.md`.
 
-(The public `kagglehub.model_download("sorokin/qwen3_4b_grids15_sft139/transformers/bfloat16/1")`
-also works unauthenticated; pass the directory it prints as `--model`.)
+## 3. Gate and hand-over
 
-## 3. Data check (writes the exclude list the trainer also enforces on its own)
+The gate cell stops the notebook unless BOTH hold -- `drop_in_ok` (merged dir is a real
+drop-in for the base) and `val_improved` (held-out loss went down). If it fails, keep the
+manifest numbers and do not upload.
 
-    !cd /content/repo && python arc-agi-2/dev/check_sft_data.py \
-        tasks:arc-agi-2/arc-agi_training_challenges.json:arc-agi-2/arc-agi_training_solutions.json \
-        --write-exclude /content/exclude.json
+On success the last cell prints `DONE.` plus the model source string, which feeds
+`swap_runbook.md` step 2 (`--model-source` for `make_gen_kernel.py`, or `--second` for
+`make_union_kernel.py`).
 
-Measured on the ops side: 1,000 public training tasks, format OK, 0 overlapping
-the evaluation set. `Nabidnur/arc-agi-2-grids` sft128 is these same 1,000 tasks
-x 128 augmentations (format OK, 0 overlap) -- it adds no tasks, so it is not
-needed. Its 410 synthetic tasks are extra data (optional second `--data`):
-
-    !wget -q -O /content/syn.jsonl https://huggingface.co/datasets/Nabidnur/arc-agi-2-grids/resolve/main/synthetic/curriculum_v0_verified.jsonl
-
-## 4. Train (resumable)
-
-Pick the preset from the GPU you got: `t4` (free tier), `l4`, `a100`.
-
-    !cd /content/repo && python arc-agi-2/dev/sft_ag2.py --model /content/base --out /content/drive/MyDrive/sft_run1 \
-        --preset t4 --max-steps 4000 --max-hours 10.5 --exclude /content/exclude.json \
-        --data tasks:arc-agi-2/arc-agi_training_challenges.json:arc-agi-2/arc-agi_training_solutions.json
-
-Write `--out` to Drive so the checkpoint survives a recycled runtime. After a
-stop (time budget or disconnect) run the SAME command plus `--resume`.
-
-First 50 steps tell you whether the preset fits: watch `nvidia-smi` for the
-peak and the `s/step` in the log. If the T4 run aborts with "non-finite
-losses", fp16 is overflowing: there is no T4 fix, move to an L4/A100 runtime.
-Keep the first run short on purpose (xcalibur was 63 updates): 4,000 steps at
-accum 8 = 500 updates.
-
-## 5. Result
-
-The script prints train/val loss, runs `check_swap_model` on `<out>/merged`
-and writes `<out>/manifest.json`. Go on only if BOTH hold:
-
-- `DROP-IN OK`
-- `val_improved: true` (held-out public tasks; the AGI-3 adapter that hurt the
-  model would have failed this check)
-
-## 6. Upload as a private Kaggle Model (first time)
-
-    !mkdir -p /content/meta && kaggle models init -p /content/meta
-    # edit model-metadata.json: ownerSlug=takumuhata, title, slug=<slug>, isPrivate=true
-    !kaggle models create -p /content/meta
-    !kaggle models instances init -p /content/drive/MyDrive/sft_run1/merged
-    # edit model-instance-metadata.json: ownerSlug, modelSlug=<slug>, instanceSlug=bf16, framework=transformers
-    !kaggle models instances create -p /content/drive/MyDrive/sft_run1/merged
-
-Later runs: `kaggle models instances versions create takumuhata/<slug>/transformers/bf16 -p <merged dir> -n "<notes>"`.
-If `framework=transformers` is rejected, use `Transformers` (the enum spelling
-was not verified against the live API).
-
-## 7. Verify the uploaded copy and hand over
-
-    !kaggle models instances versions download takumuhata/<slug>/transformers/bf16/1 -p /content/verify --untar
-    !cd /content/repo && python arc-agi-2/dev/check_swap_model.py /content/verify /content/base
-
-Then on the ops VM: `swap_runbook.md` from step 2 with
-`--model-source takumuhata/<slug>/Transformers/bf16/1`.
+If the `kaggle models` upload cell fails on Colab (that CLI path is unverified there), the
+merged model is already safe on Drive at `arc_sft/<slug>/merged` -- pull it down and upload
+from the ops VM instead.
