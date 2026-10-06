@@ -1281,3 +1281,23 @@ A/B experiment can wait a week; the medal math can't.
   BUT cost correlates weakly with actual time (0934a4d8 cost 4593 ran
   582s vs 36a08778 cost 3048 ran 1103s — decode difficulty, not grid
   size, drives duration). faircap cost now includes train outputs.
+
+## 2026-10-06 — lane state rebuilt in devin-e6d7bb1298cb4814a0ccfe7b68c2fc44
+
+Previous lane VM (session 514da5ce) is suspended; its local commits were
+unreachable (repo archived, no push). Rebuilt this branch's tree from the
+part attachments in that session's chat history:
+
+- parts 1..14a + 14d applied on 259889c and committed one-per-part
+  (see git log). File hashes verified against the part-14 sha table:
+  sft_ag2.py 7566fae6, game_hints.py 8f695a49, check_patch_cell.py
+  7540b772 (tail respliced from the resent 47 lines).
+- medal_closeout.md: same xcalibur->NVARC sed repoint replayed.
+- check_patch_cell.py: kept Claude's (20,5) fixture counts — this tree's
+  submit_ag3_flashnext_patched ipynb is the pre-ops-fix version, so the
+  (18,3) adjustment does not apply here.
+- All tool --selftest pass (torch cpu venv: ~/.venv-cputorch).
+- MISSING: part 14b (make_colab_sft_nb.py, colab_sft_runbook.md,
+  colab_sft_ag2.md update) and part 14c (wm_level2_only.py,
+  wm_short_prompt.py) — never delivered to either session; requested
+  re-send from Claude. colab_sft_ag2.md is at the part-8 version.
