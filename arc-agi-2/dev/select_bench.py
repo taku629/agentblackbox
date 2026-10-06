@@ -21,7 +21,7 @@ from collections import defaultdict
 
 import numpy as np
 
-BASE = "/home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2"
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def hashable(g):
@@ -111,7 +111,7 @@ def diverse_rank2(samples):
         aug = np.mean([np.mean(g["score_aug"]) for _, g in pairs])
         fams = defaultdict(int)
         for sk, _ in pairs:
-            fams[aug_family(sk.split(".")[0])] += 1
+            fams[".".join(p for p in sk.split(".")[1:] if p in ("transpose", "rot90")) or "id"] += 1
         dom_fam = max(fams, key=fams.get)
         scored.append((inf - aug, pairs[0][1]["solution"], dom_fam))
     scored.sort(key=lambda x: x[0], reverse=True)
