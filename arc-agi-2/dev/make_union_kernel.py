@@ -34,7 +34,7 @@ rerun_sim.py that pass 1 does not need the time.
 
 Unverified on GPU: loading a second FastLanguageModel in the same process after the first was
 released (unsloth patches model classes at import time). The first real run should be a small
---whitelist panel, and its log must show '[Rank r] pass 2: loaded' and tagged files.
+--whitelist panel, and its log must show '[Rank r] pass 2: done' and tagged files.
 """
 import argparse
 import ast

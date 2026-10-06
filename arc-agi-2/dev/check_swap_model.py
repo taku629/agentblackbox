@@ -91,6 +91,9 @@ def check(cand, ref=None):
     else:
         if cfg.get("vocab_size", 0) <= 15:
             add("FAIL", f"vocab_size {cfg.get('vocab_size')} does not cover token id 15")
+        if cfg.get("tie_word_embeddings"):
+            add("WARN", "tie_word_embeddings is true: lm_head shares embed_tokens. TTT trains both, so check in the "
+                        "smoke log that the adapter loads and the first-task loss falls as on the baseline")
         if ref:
             rcfg = json.load(open(os.path.join(ref, "config.json")))
             diff = {k: (cfg.get(k), rcfg.get(k)) for k in CFG_KEYS if cfg.get(k) != rcfg.get(k)}
@@ -164,6 +167,10 @@ def selftest():
         make(f32, dtype="F32")
         ok, msgs = check(f32, ref)
         assert ok and any("not pure bf16" in m for lv, m in msgs if lv == "WARN")
+        tied = os.path.join(t, "tied")
+        make(tied, cfg={"tie_word_embeddings": True})
+        ok, msgs = check(tied, ref)
+        assert ok and any("tie_word_embeddings" in m for lv, m in msgs if lv == "WARN")
         mism = os.path.join(t, "mism")
         make(mism, shapes={"model.embed_tokens.weight": [32, 2560]})
         assert not check(mism)[0]
