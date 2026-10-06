@@ -4,7 +4,8 @@
 #   bash arc-agi-2/analyze_evalscan.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-KAGGLE=/home/ubuntu/.venv-kaggle/bin/kaggle
+export ARC2_DIR="$PWD/arc-agi-2"
+KAGGLE=${KAGGLE:-/home/ubuntu/.venv-kaggle/bin/kaggle}
 OUT=/tmp/evalscan
 
 echo "== kernel status =="
@@ -26,20 +27,22 @@ for line in open('/tmp/evalscan/timing.log'):
     m = re.search(r'puzzle (\w+): (\w+(?: \w+)?) at (\d+)s \(dt (\d+)s|puzzle (\w+): TTT done at (\d+)s|puzzle (\w+): TOTAL (\d+)s', line)
     if 'TTT done at' in line:
         k = line.split('puzzle ')[1].split(':')[0]
-        ttt[k] = int(line.rsplit(' ', 1)[1].rstrip('s'))
+        ttt[k] = int(line.rsplit(' ', 1)[1].strip().rstrip('s'))
     elif 'batch at' in line:
         k = line.split('puzzle ')[1].split(':')[0]
         dt = int(re.search(r'dt (\d+)s', line).group(1))
         batches[k].append(dt)
     elif 'TOTAL' in line:
         k = line.split('puzzle ')[1].split(':')[0]
-        totals[k] = int(line.rsplit(' ', 1)[1].rstrip('s'))
+        totals[k] = int(line.rsplit(' ', 1)[1].strip().rstrip('s'))
 import statistics as st
 print(f"tasks completed: {len(totals)}")
 if totals:
     v = sorted(totals.values())
     print(f"per-task TOTAL: median {st.median(v):.0f}s, p90 {v[int(len(v)*0.9)]}s, max {v[-1]}s")
     print(f"sum task time: {sum(v)/3600:.1f}h across 4 workers -> ~{sum(v)/4/3600:.1f}h/worker")
+    budget = 4 * (12 * 3600 - 600)
+    print(f"SLACK {1 - sum(v) / budget:.2f}  (unused share of the 4-worker budget; pass as --slack to gen_boost / make_gen_kernel)")
 if ttt:
     v = sorted(ttt.values())
     print(f"TTT: median {st.median(v):.0f}s, p90 {v[int(len(v)*0.9)]}s, max {v[-1]}s")
@@ -53,11 +56,11 @@ fi
 
 echo
 echo "== ALL_CORRECT coverage (generation vs selection split) =="
-LOG=$(ls *.log 2>/dev/null | head -1)
+LOG=$(ls *.log 2>/dev/null | grep -v '^timing\.log$' | head -1 || true)
 if [ -n "$LOG" ]; then
     python3 - <<'PY'
 import re, collections, glob
-log = glob.glob('/tmp/evalscan/*.log')[0]
+log = sorted(f for f in glob.glob('/tmp/evalscan/*.log') if not f.endswith('timing.log'))[0]
 ac = collections.defaultdict(list)
 for ln in open(log, errors='replace'):
     m = re.search(r'ALL_CORRECT:\s*([\d.]+)\s*-\s*([\d.]+)\s*(\d+x\d+)\s*\[([a-f0-9]+)_(\d+)', ln)
@@ -65,13 +68,15 @@ for ln in open(log, errors='replace'):
         ac[(m.group(4), m.group(5))].append(float(m.group(1)))
 gen_strong = gen_weak = gen_none = 0
 for k, vs in sorted(ac.items()):
-    mx = max(vs)
-    tag = 'strong' if mx > 0.1 else 'weak'
-    print(f"{k[0]}_{k[1]}: correct-in {len(vs)} subkeys, max {mx:.4f} [{tag}]")
-    if mx > 0.1: gen_strong += 1
+    # beam_score is an NLL (lower = more likely; DFS prunes at 1.609 = p 0.2)
+    best = min(vs)
+    tag = 'strong' if best < 0.693 else 'weak'   # best view gives the gold p >= 0.5
+    print(f"{k[0]}_{k[1]}: correct-in {len(vs)} subkeys, best NLL {best:.4f} (p={2.718281828**-best:.2f}) [{tag}]")
+    if best < 0.693: gen_strong += 1
     else: gen_weak += 1
 import json
-base = '/home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2/'
+import os
+base = os.environ['ARC2_DIR'] + '/'
 sol = json.load(open(base+'arc-agi_evaluation_solutions.json'))
 ch = json.load(open(base+'arc-agi_evaluation_challenges.json'))
 seen = set(ac)
@@ -79,7 +84,7 @@ gen_none = 0
 by_class = collections.defaultdict(lambda: [0,0,0])  # class -> [gen, none, tot]
 for k, so in sol.items():
     for i, gold in enumerate(so):
-        ti = ch[k]['test'][0]['input']
+        ti = ch[k]['test'][i]['input']
         area_in, area_out = len(ti)*len(ti[0]), len(gold)*len(gold[0])
         cl = 'same' if area_out == area_in else ('extract' if area_out < area_in else 'larger')
         hit = (k, str(i)) in seen
@@ -100,4 +105,4 @@ fi
 
 echo
 echo "== selection strategies vs eval solutions =="
-python3 /home/ubuntu/repos/arc-prize-2026-agent-work/arc-agi-2/dev/select_bench.py "$OUT/inference_outputs"
+python3 "$ARC2_DIR/dev/select_v2.py" "$OUT/inference_outputs"
