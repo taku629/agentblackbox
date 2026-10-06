@@ -81,6 +81,55 @@ def swap_model(nb, meta, source):
     return nb, meta
 
 
+WHITELIST_OLD = 'if key not in ["0934a4d8", "36a08778", "981571dc", "aa4ec2a5"]:'
+OUT_OLD, OUT_NEW = '"/kaggle/inference_outputs"', '"/kaggle/working/inference_outputs"'
+
+
+def set_whitelist(nb, ids):
+    """Which evaluation tasks a NORMAL (non-rerun) run decodes. Production decodes 4; `ids` is a
+    list of task ids or "all". The competition rerun always decodes every hidden task regardless."""
+    hits = 0
+    for c in nb["cells"]:
+        s = msk.src(c)
+        if WHITELIST_OLD in s:
+            hits += s.count(WHITELIST_OLD)
+            if ids == "all":
+                new = "if False:"
+            else:
+                known = json.load(open(os.path.join(os.path.dirname(HERE), "arc-agi_evaluation_challenges.json")))
+                bad = [i for i in ids if i not in known]
+                assert not bad, f"not evaluation task ids: {bad}"
+                assert len(set(ids)) == len(ids) and ids, "empty or duplicated whitelist"
+                new = f"if key not in {sorted(ids)!r}:"
+            msk.set_src(c, s.replace(WHITELIST_OLD, new))
+    assert hits == 1, f"expected the whitelist line exactly once, found {hits}"
+    return nb
+
+
+def persist_outputs(nb):
+    """Write the candidate pickles under /kaggle/working so they are in the kernel output
+    (production keeps them in /kaggle/inference_outputs, which is discarded). Measurement runs need this."""
+    hits = 0
+    for c in nb["cells"]:
+        s = msk.src(c)
+        if OUT_OLD in s:
+            hits += s.count(OUT_OLD)
+            msk.set_src(c, s.replace(OUT_OLD, OUT_NEW))
+    assert hits == 2, f"expected the output dir in arc_solver and the final cell (2), found {hits}"
+    return nb
+
+
+def rename(meta, title):
+    """Give a measurement kernel its own slug and directory so it never overwrites (or pushes
+    a new version of) the genboost submission kernel. Kaggle requires id == slugified title."""
+    slug = "-".join(title.lower().split())
+    assert slug and all(ch.isalnum() or ch == "-" for ch in slug), f"title must be words of letters/digits: {title!r}"
+    assert slug != SLUG, "pick a name different from the genboost kernel"
+    owner = meta["id"].split("/")[0]
+    meta.update(id=f"{owner}/{slug}", title=title, code_file=f"{slug}.ipynb")
+    return meta, os.path.join(msk.REPO, "submit_ag2_" + slug.replace("arc-agi2-", "").replace("-", "_"))
+
+
 def build(levers, nb=None, meta=None):
     unknown = set(levers) - set(gen_boost.LEVERS_OFF)
     assert not unknown, f"unknown levers {unknown}"
@@ -154,6 +203,33 @@ def selftest():
         ref = json.load(open(staged))["cells"]
         assert model_path("pranshubahadur/xcalibur-aa2-sft-500/Transformers/bf16/1") in \
             msk.src(ref[msk.find(ref, "%%writefile arc_solver.py")])
+    # whitelist + persisted outputs for measurement runs
+    nb4, _ = build({"probe_gold": True})
+    nb4 = persist_outputs(set_whitelist(nb4, ["aa4ec2a5", "0934a4d8", "135a2760"]))
+    st = msk.src(nb4["cells"][msk.find(nb4["cells"], "%%writefile starter.py")])
+    assert "if key not in ['0934a4d8', '135a2760', 'aa4ec2a5']:" in st and WHITELIST_OLD not in st
+    compile(st.split("\n", 1)[1], "starter.py", "exec")
+    sv = msk.src(nb4["cells"][msk.find(nb4["cells"], "%%writefile arc_solver.py")])
+    assert 'dir_outputs = "/kaggle/working/inference_outputs"' in sv
+    assert 'decoder.load_decoded_results("/kaggle/working/inference_outputs")' in msk.src(nb4["cells"][-1])
+    nb5, _ = build({})
+    st5 = msk.src(set_whitelist(nb5, "all")["cells"][msk.find(nb5["cells"], "%%writefile starter.py")])
+    assert "if False:" in st5 and "rerun_mode" in st5
+    for bad_ids in (["zzzzzzzz"], [], ["aa4ec2a5", "aa4ec2a5"]):
+        try:
+            set_whitelist(build({})[0], bad_ids)
+            raise SystemExit("bad whitelist accepted")
+        except AssertionError:
+            pass
+    m6, d6 = rename(dict(meta3), "ARC AGI2 Xcalibur Panel")
+    assert m6["id"].endswith("/arc-agi2-xcalibur-panel") and m6["code_file"] == "arc-agi2-xcalibur-panel.ipynb"
+    assert d6.endswith("submit_ag2_xcalibur_panel") and d6 != OUT_DIR
+    for bad_title in ("ARC AGI2 GenBoost", "bad/title", ""):
+        try:
+            rename(dict(meta3), bad_title)
+            raise SystemExit("bad kernel name accepted")
+        except AssertionError:
+            pass
     # refusal paths
     for bad in ({"g9": True}, {"g1": "always"}):
         try:
@@ -173,6 +249,11 @@ if __name__ == "__main__":
     ap.add_argument("--with-select", action="store_true")
     ap.add_argument("--model-source", help="drop-in checkpoint, e.g. owner/slug/Transformers/bf16/1")
     ap.add_argument("--probe-gold", action="store_true", help="also write gold NLL per input (eval runs only)")
+    ap.add_argument("--whitelist", help='eval tasks a normal run decodes: comma-separated ids or "all" '
+                                        "(default: the 4 production tasks); implies --persist-outputs")
+    ap.add_argument("--persist-outputs", action="store_true", help="keep candidate pickles in the kernel output")
+    ap.add_argument("--name", help='kernel title for a measurement run, e.g. "ARC AGI2 Xcalibur Panel" '
+                                   "(own slug + own submit_ag2_* directory; default: the genboost kernel)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -185,13 +266,13 @@ if __name__ == "__main__":
         d = gen_boost.decide(verdict["diagnostics"], a.slack)
         for line in d["why"]:
             print(" -", line)
-        if not d["changed"] and not (a.model_source or a.probe_gold):
+        if not d["changed"] and not (a.model_source or a.probe_gold or a.whitelist):
             sys.exit("decide(): no generation lever is supported by the diagnostics; nothing built.")
         levers = {k: v for k, v in d["levers"].items() if v != gen_boost.LEVERS_OFF[k]}
-    elif a.model_source or a.probe_gold:
+    elif a.model_source or a.probe_gold or a.whitelist:
         levers = {}
     else:
-        ap.error("give --verdict, --levers, --model-source or --probe-gold")
+        ap.error("give --verdict, --levers, --model-source, --probe-gold or --whitelist")
     if a.probe_gold:
         levers["probe_gold"] = True
     nb = meta = None
@@ -202,4 +283,17 @@ if __name__ == "__main__":
     nb, meta = build(levers, nb, meta)
     if a.model_source:
         nb, meta = swap_model(nb, meta, a.model_source)
-    print("built", msk.write(nb, meta, OUT_DIR), "levers:", levers, "model:", meta["model_sources"], "(not pushed)")
+    if a.whitelist:
+        nb = set_whitelist(nb, "all" if a.whitelist == "all" else [x for x in a.whitelist.split(",") if x])
+    if a.whitelist or a.persist_outputs:
+        nb = persist_outputs(nb)
+    if levers.get("probe_gold") and not a.whitelist:
+        print("NOTE: a normal run decodes only the 4 production whitelist tasks -- probe_gold will measure "
+              "those 4 only. Use --whitelist all (12 h) or a panel from swap_eval.py for a real measurement.")
+    out_dir = OUT_DIR
+    if a.name:
+        meta, out_dir = rename(meta, a.name)
+    elif a.model_source or a.whitelist:
+        print("WARNING: no --name given: this build overwrites submit_ag2_genboost and shares its kernel slug.")
+    print("built", msk.write(nb, meta, out_dir), "id:", meta["id"], "levers:", levers,
+          "model:", meta["model_sources"], "(not pushed)")
