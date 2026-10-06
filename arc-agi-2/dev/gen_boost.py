@@ -322,6 +322,54 @@ def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_l
 
 
 # ------------------------------------------------------------------- decision
+def union_pairs(decoded_results, tag=".runm2"):
+    """Grids that BOTH models generated for the same test input -> [(mean aug NLL under A, under B, base key)].
+    Each model scored the grid itself, with its own per-task adapter, so these pairs show how the two NLL
+    scales relate on grids each model 'owns' equally."""
+    pairs = []
+    for bk, guesses in decoded_results.items():
+        by = {}
+        for name, g in guesses.items():
+            h = tuple(map(tuple, g["solution"]))
+            by.setdefault(h, ([], []))[1 if tag in name else 0].append(float(np.mean(g["score_aug"])))
+        for a, b in by.values():
+            if a and b:
+                pairs.append((float(np.mean(a)), float(np.mean(b)), bk))
+    return pairs
+
+
+def calibrate_union(decoded_results, tag=".runm2", mode="offset", min_pairs=8):
+    """Put model B's aug scores on model A's scale before selection. In place; returns what was done.
+
+    kgmon ranks a grid by  votes - mean aug NLL, and every sample carries the NLL of the model that
+    generated it. If model B's NLLs sit systematically above (below) A's, B-only grids are under- (over-)
+    ranked against A-only grids of the same quality. The relation is estimated on the grids both models
+    generated (union_pairs, pooled over all inputs of the run):
+        offset: B' = B - median(B - A)        ratio: B' = B / median(B / A)
+    Fewer than min_pairs shared grids -> nothing is changed (no evidence, no correction).
+    Samples of model A are never touched, so tasks without pass-2 output select exactly as before."""
+    pairs = union_pairs(decoded_results, tag)
+    info = {"pairs": len(pairs), "mode": mode, "applied": False, "offset": 0.0, "ratio": 1.0, "b_samples": 0}
+    if pairs:
+        d = [b - a for a, b, _ in pairs]
+        r = [b / a for a, b, _ in pairs if a > 1e-3]
+        info["offset"] = float(np.median(d))
+        info["offset_iqr"] = [float(np.percentile(d, 25)), float(np.percentile(d, 75))]
+        info["ratio"] = float(np.median(r)) if r else 1.0
+    if len(pairs) < min_pairs or mode not in ("offset", "ratio"):
+        return info
+    off, ratio = info["offset"], max(info["ratio"], 1e-3)
+    for guesses in decoded_results.values():
+        for name in list(guesses):
+            if tag in name:
+                g = guesses[name]
+                new = [float(x) - off for x in g["score_aug"]] if mode == "offset" else [float(x) / ratio for x in g["score_aug"]]
+                guesses[name] = dict(g, score_aug=new, score_aug_raw=list(g["score_aug"]))
+                info["b_samples"] += 1
+    info["applied"] = True
+    return info
+
+
 def decide(diag, slack=None):
     """gen_diagnostics dict (select_verdict.json['diagnostics']) -> levers + reasons.
     slack = fraction of the kernel budget the evalscan run left unused

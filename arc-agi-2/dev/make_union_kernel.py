@@ -17,6 +17,14 @@ Design (sequential, one model in GPU memory at a time):
           (kgmon over the union).
   The per-task LoRA is re-initialised for every task in both passes, exactly as in production.
 
+Scoring of the merged pool (production arc_decoder.getter_kgmon, unchanged): a grid's score is
+  (number of samples = views, summed over both models) - mean over those samples of mean(score_aug),
+and score_aug is written at decode time by the model that generated the sample (with that task's adapter).
+So model A never scores model B's grids; a B-only grid is ranked by B's own NLL against A-only grids
+ranked by A's NLL. That is fair only if the two NLL scales agree. --calibrate estimates the relation on
+grids both models generated and moves B's scores onto A's scale (gen_boost.calibrate_union); measure it
+first with `swap_eval.py union-scores <union inference_outputs>`. Flag: --calibrate offset|ratio (default: off).
+
 Memory: identical to production at any moment (one 3.6 B bf16 model + its r=256 TTT adapter per L4).
 Disk: both checkpoints are mounted through model_sources (~7.3 GB each).
 
@@ -98,6 +106,11 @@ STARTER_EDITS = [
 ]
 
 
+FINAL_LOAD = 'decoder.load_decoded_results("/kaggle/inference_outputs")\n'
+FINAL_CAL = ('import gen_boost\n'
+             'print("union calibration:", gen_boost.calibrate_union(decoder.decoded_results, %r, mode=%r))\n')
+
+
 def _edit(text, edits, what):
     for a, b in edits:
         assert text.count(a) == 1, f"{what}: anchor matched {text.count(a)}x: {a.strip()[:60]!r}"
@@ -105,7 +118,7 @@ def _edit(text, edits, what):
     return text
 
 
-def build(second, levers=None, reserve=0.0, first=mgk.BASE_MODEL_SOURCE):
+def build(second, levers=None, reserve=0.0, first=mgk.BASE_MODEL_SOURCE, calibrate=None):
     assert 0.0 <= reserve <= 0.5, "reserve must be within 0..0.5"
     assert second and second != first, "the second model must differ from the first"
     lv = dict(levers or {})
@@ -122,6 +135,11 @@ def build(second, levers=None, reserve=0.0, first=mgk.BASE_MODEL_SOURCE):
     msk.set_src(cells[i], s)
     j = msk.find(cells, "%%writefile starter.py")
     msk.set_src(cells[j], _edit(msk.src(cells[j]), STARTER_EDITS, "starter"))
+    if calibrate:
+        assert calibrate in ("offset", "ratio"), "calibrate must be offset or ratio"
+        k = [n for n, c in enumerate(cells) if FINAL_LOAD in msk.src(c)]
+        assert len(k) == 1, f"final selection cell: load line found in {len(k)} cells"
+        msk.set_src(cells[k[0]], msk.src(cells[k[0]]).replace(FINAL_LOAD, FINAL_LOAD + FINAL_CAL % (TAG2, calibrate)))
     assert meta["model_sources"] == [mgk.BASE_MODEL_SOURCE]
     meta["model_sources"] = [first, second]
     owner = meta["id"].split("/")[0]
@@ -219,6 +237,45 @@ def selftest():
     b_gold = {v + TAG2: [mk(gold, 2.0)] for v in views}                        # B finds what A never generated
     assert top2({**a_files, **b_gold})[0] == gold.tolist()
     assert top2(b_gold) == [gold.tolist()]                                     # A produced nothing at all
+    # score scales: model B's NLLs sit 3 nats above model A's on the grids both generated. Production kgmon
+    # then ranks B's correct grid (2 votes, NLL 4.5) below A's wrong one (2 votes, NLL 2.0); calibrated it wins.
+    def decoded(files):
+        return {"aaaa0001_0": {f"{name}.out{i}": smp for name, samples in files.items() for i, smp in enumerate(samples)}}
+
+    def pick(dec):
+        return [g.tolist() for g in arc_decoder.score_kgmon(dec["aaaa0001_0"])[:2]]
+
+    shared = [np.array([[i, i], [i, 7]]) for i in range(8)]
+    a_side = {views[0]: [mk(wrong, 2.0)] + [mk(g, 6.0 + i) for i, g in enumerate(shared)], views[1]: [mk(wrong, 2.0)]}
+    b_side = {views[0] + TAG2: [mk(gold, 4.5)] + [mk(g, 9.0 + i) for i, g in enumerate(shared)], views[1] + TAG2: [mk(gold, 4.5)]}
+    raw = decoded({**a_side, **b_side})
+    assert pick(raw)[0] == wrong.tolist() and top2({**a_side, **b_side})[0] == wrong.tolist()
+    assert len(gen_boost.union_pairs(raw, TAG2)) == 8
+    info = gen_boost.calibrate_union(raw, TAG2)
+    assert info["applied"] and info["pairs"] == 8 and abs(info["offset"] - 3.0) < 1e-9 and info["b_samples"] == 10, info
+    assert pick(raw)[0] == gold.tolist() and pick(raw)[1] == wrong.tolist()
+    assert all(v["score_aug"] == [2.0] * 8 for k, v in raw["aaaa0001_0"].items() if TAG2 not in k and v["solution"] is wrong)
+    few = decoded({views[0]: [mk(wrong, 2.0), mk(shared[0], 6.0)], views[0] + TAG2: [mk(gold, 4.5), mk(shared[0], 9.0)]})
+    before = pick(few)
+    info = gen_boost.calibrate_union(few, TAG2)                                  # one shared grid: no evidence, no change
+    assert not info["applied"] and info["pairs"] == 1 and pick(few) == before
+    solo = decoded(a_files)
+    assert not gen_boost.calibrate_union(solo, TAG2)["applied"] and pick(solo) == [wrong.tolist(), other.tolist()]
+    rat = decoded({views[0]: [mk(g, 2.0 + i) for i, g in enumerate(shared)], views[0] + TAG2: [mk(g, 4.0 + 2 * i) for i, g in enumerate(shared)]})
+    info = gen_boost.calibrate_union(rat, TAG2, mode="ratio")
+    assert info["applied"] and abs(info["ratio"] - 2.0) < 1e-9
+    assert all(abs(v["score_aug"][0] - rat["aaaa0001_0"][k.replace(TAG2, "")]["score_aug"][0]) < 1e-9
+               for k, v in rat["aaaa0001_0"].items() if TAG2 in k)
+    # the calibrated build: one extra statement in the final cell, valid python, follows --whitelist's output move
+    nb3, _ = build(second, calibrate="offset")
+    fin = [msk.src(c) for c in nb3["cells"] if FINAL_LOAD in msk.src(c)]
+    assert len(fin) == 1 and fin[0].count("gen_boost.calibrate_union(decoder.decoded_results, '.runm2', mode='offset')") == 1
+    assert fin[0].index(FINAL_LOAD) < fin[0].index("calibrate_union") < fin[0].index("decoder.run_selection_algo()")
+    compile(fin[0], "final", "exec")
+    base_fin = [msk.src(c) for c in build(second)[0]["cells"] if FINAL_LOAD in msk.src(c)][0]
+    assert fin[0].replace(FINAL_CAL % (TAG2, "offset"), "") == base_fin
+    nb3 = mgk.persist_outputs(nb3)
+    assert "calibrate_union" in [msk.src(c) for c in nb3["cells"] if "/kaggle/working/inference_outputs" in msk.src(c)][-1]
     # refusals
     for bad in (dict(second=mgk.BASE_MODEL_SOURCE), dict(second=second, reserve=0.9)):
         try:
@@ -233,7 +290,8 @@ def selftest():
     print("selftest ok: worker() runs model A on every task then model B on the unsettled queue (tagged files, "
           "reserve honoured, no pass 2 without time, single-pass call still valid); the build equals genboost plus "
           "the listed edits; under the production decoder a second model that agrees leaves kgmon's top-2 unchanged "
-          "and one that finds a new grid adds it")
+          "and one that finds a new grid adds it; --calibrate shifts only model B's scores, by the offset "
+          "measured on shared grids, and does nothing below 8 shared grids")
 
 
 if __name__ == "__main__":
@@ -245,6 +303,8 @@ if __name__ == "__main__":
     ap.add_argument("--whitelist")
     ap.add_argument("--probe-gold", action="store_true")
     ap.add_argument("--name")
+    ap.add_argument("--calibrate", choices=["offset", "ratio"],
+                    help="put model B's aug scores on model A's scale before kgmon (see swap_eval.py union-scores)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -255,7 +315,7 @@ if __name__ == "__main__":
     levers = json.loads(a.levers)
     if a.probe_gold:
         levers["probe_gold"] = True
-    nb, meta = build(a.second, levers, a.reserve, a.first)
+    nb, meta = build(a.second, levers, a.reserve, a.first, a.calibrate)
     if a.first != mgk.BASE_MODEL_SOURCE:
         raise SystemExit("--first other than sft139 is not supported yet (the base path is patched in place)")
     out_dir = os.path.join(msk.REPO, "submit_ag2_union")
@@ -264,4 +324,4 @@ if __name__ == "__main__":
     if a.name:
         meta, out_dir = mgk.rename(meta, a.name)
     print("built", msk.write(nb, meta, out_dir), "id:", meta["id"], "models:", meta["model_sources"],
-          "reserve:", a.reserve, "(not pushed)")
+          "reserve:", a.reserve, "calibrate:", a.calibrate, "(not pushed)")
