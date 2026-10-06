@@ -22,6 +22,11 @@ Levers (all gated by the per-task time cap and the global end_time):
   g2  one more DFS over the base views with the cut loosened to p > 0.05,
       keeping only beams the first pass could not have produced
   faircap  per-task cap from the time actually left instead of a fixed 1200 s
+  probe_gold  measurement only, never in a competition rerun: teacher-forced
+      NLL of the GOLD grid under the TTT'd model on the 8 aug-scoring views,
+      appended to <probe_dir>/gold_nll_rank<r>.jsonl. Tells, per missed input,
+      whether the answer was just outside the decoder's reach or nowhere near
+      (read by gen_autopsy.py --gold-nll). Costs two scoring batches per input.
 
 Measured locally and therefore NOT implemented: raising max_seq_length (3/172
 eval inputs lose a train example at 8192, none extraction-type) and extra TTT
@@ -43,7 +48,8 @@ try:
 except ImportError:                                    # --decide works without torch
     torch = None
 
-LEVERS_OFF = {"g1": "off", "g3": False, "g2": False, "faircap": False}
+LEVERS_OFF = {"g1": "off", "g3": False, "g2": False, "faircap": False, "probe_gold": False}
+GOLD_PATH = "/kaggle/input/competitions/arc-prize-2026-arc-agi-2/arc-agi_evaluation_solutions.json"
 BASE_CAP = 1200.0
 LOOSE_P = 0.05
 MIN_AGREE = 3
@@ -148,6 +154,22 @@ def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_l
     def out_of_time():
         return time.time() - start_time > task_cap or time.time() > end_time
 
+    def aug_scores(bk, solution):
+        """NLL of `solution` for input bk under the 8 augmented scoring views (production recipe)."""
+        aug_dataset = ctx["ArcDataset"](
+            keys=[bk],
+            queries={bk: puzzle_ds_multi.queries.get(bk)},
+            replies={bk: [np.asarray(solution).tolist()]},
+        )
+        aug_dataset = aug_dataset.augment(seed=hash(bk) % 1024**2)
+        aug_dataset = aug_dataset.cut_to_len(formatter=formatter, name="input", max_len=in_len)
+        aug_queries, aug_answers = [], []
+        for augmented_sample in aug_dataset.as_list(formatter):
+            aug_queries.append(augmented_sample["input"])
+            aug_answers.append(augmented_sample["reply"])
+        return (ctx["calc_scores"](aug_queries[:4], aug_answers[:4], tokenizer, model)
+                + ctx["calc_scores"](aug_queries[4:], aug_answers[4:], tokenizer, model))
+
     def score_and_store(ds, subkey, scored_beams, suffix, keep=None):
         bk = subkey.split(".")[0]
         decoded_result = []
@@ -163,19 +185,7 @@ def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_l
                 augmented_scores = known_scores[grid_id]
             else:
                 print(f"[Rank {rank}] scoring {subkey} #{len(decoded_result)}")
-                aug_dataset = ctx["ArcDataset"](
-                    keys=[bk],
-                    queries={bk: puzzle_ds_multi.queries.get(bk)},
-                    replies={bk: [solution.tolist()]},
-                )
-                aug_dataset = aug_dataset.augment(seed=hash(bk) % 1024**2)
-                aug_dataset = aug_dataset.cut_to_len(formatter=formatter, name="input", max_len=in_len)
-                aug_queries, aug_answers = [], []
-                for augmented_sample in aug_dataset.as_list(formatter):
-                    aug_queries.append(augmented_sample["input"])
-                    aug_answers.append(augmented_sample["reply"])
-                augmented_scores = (ctx["calc_scores"](aug_queries[:4], aug_answers[:4], tokenizer, model)
-                                    + ctx["calc_scores"](aug_queries[4:], aug_answers[4:], tokenizer, model))
+                augmented_scores = aug_scores(bk, solution)
                 known_scores[grid_id] = augmented_scores
             decoded_result.append({"beam_score": beam_score, "score_aug": augmented_scores, "solution": solution})
         if decoded_result:
@@ -248,6 +258,28 @@ def decode_task(ctx, puzzle_ds_multi, start_time, end_time, levers=None, tasks_l
                 mine = [[s for s in b if s.split(".")[0] == bk] for b in base_batches]
                 run_pass(eval_ds, mine, "dfs", suffix=".run3", cut=loose,
                          keep=lambda nll: nll >= max_score, label=" [g2]")
+
+        # probe_gold -- measurement only; impossible in a rerun (no solutions file, and guarded anyway)
+        if lv["probe_gold"] and not os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
+            gold_path = ctx.get("gold_path", GOLD_PATH)
+            if os.path.exists(gold_path):
+                with open(gold_path) as f:
+                    gold_all = json.load(f)
+                lines = []
+                for bk in input_keys:
+                    task, idx = bk.split("_")
+                    if task not in gold_all or time.time() > end_time:
+                        continue
+                    gold = np.asarray(gold_all[task][int(idx)])
+                    gid = (bk, tuple(map(tuple, gold)))
+                    nll = known_scores[gid] if gid in known_scores else aug_scores(bk, gold)
+                    lines.append(json.dumps({"bk": bk, "gold_aug_nll": [float(x) for x in nll],
+                                             "n_tok": int(gold.shape[0] * (gold.shape[1] + 1)),
+                                             "generated": gid in known_scores}))
+                    stats["probe_inputs"] += 1
+                if lines:
+                    with open(os.path.join(ctx.get("probe_dir", "/kaggle/working"), f"gold_nll_rank{rank}.jsonl"), "a") as f:
+                        f.write("\n".join(lines) + "\n")
 
     if any(v != LEVERS_OFF[k] for k, v in lv.items()):
         print(f"[Rank {rank}] gen_boost levers={lv} cap={task_cap:.0f}s stats={dict(stats)}")
@@ -552,6 +584,41 @@ def selftest():
     assert fair_share_seconds(now + 40000, 116, now=now) == 40000 / 30
     assert fair_share_seconds(now + 4000, 116, now=now) == 600.0 and fair_share_seconds(now + 9e9, 0, now=now) == 2400.0
 
+    # T8 probe_gold: decode output untouched; gold NLL = L * -log(conf) on every view; skipped in a rerun
+    gd = tempfile.mkdtemp()
+    gp = os.path.join(gd, "sol.json")
+    json.dump(replies, open(gp, "w"))
+
+    def probe(key, env=None):
+        pd_ = tempfile.mkdtemp()
+        d = tempfile.mkdtemp()
+        old = os.environ.pop("KAGGLE_IS_COMPETITION_RERUN", None)
+        if env:
+            os.environ["KAGGLE_IS_COMPETITION_RERUN"] = env
+        sys.stdout = quiet
+        try:
+            decode_task(dict(ctx_for(lm, d), gold_path=gp, probe_dir=pd_), multi(key), time.time(),
+                        time.time() + 600, {"probe_gold": True})
+        finally:
+            sys.stdout = real_stdout
+            os.environ.pop("KAGGLE_IS_COMPETITION_RERUN", None)
+            if old is not None:
+                os.environ["KAGGLE_IS_COMPETITION_RERUN"] = old
+        f = os.path.join(pd_, "gold_nll_rank0.jsonl")
+        return load(d), ([json.loads(x) for x in open(f)] if os.path.exists(f) else [])
+
+    files, pr = probe("aaaa0001")
+    assert same(files, base1) and len(pr) == 1 and pr[0]["generated"] and pr[0]["n_tok"] == L
+    assert all(abs(x + L * math.log(0.97)) < 1e-3 for x in pr[0]["gold_aug_nll"]) and len(pr[0]["gold_aug_nll"]) == 8
+    files, pr = probe("aaaa0003")                                   # never generated: the probe still measures it
+    assert not files and not pr[0]["generated"] and all(abs(x + L * math.log(0.80)) < 1e-3 for x in pr[0]["gold_aug_nll"])
+    assert [r["bk"] for r in probe("aaaa0002")[1]] == ["aaaa0002_0", "aaaa0002_1"]
+    assert probe("aaaa0001", env="1")[1] == []                      # competition rerun: no probe
+    import gen_autopsy
+    pd2 = tempfile.mkdtemp()
+    json.dump(pr[0], open(os.path.join(pd2, "gold_nll_rank0.jsonl"), "w"))
+    assert gen_autopsy.parse_gold_nll(pd2)["aaaa0003_0"]["n_tok"] == L
+
     # T7 decision rule
     base = {"n_inputs": 172, "zero_cand": 0, "zero_by_class": {}, "wrong_only": 90,
             "gold_bins": {"p>=.8": 30, "p .5-.8": 8, "p .3-.5": 1, "p .2-.3": 0},
@@ -566,7 +633,8 @@ def selftest():
 
     print(f"selftest ok (torch {torch.__version__}, fake LM, {lm.calls} forward calls): levers-off output identical to the "
           "production decode block on 3 tasks; greedy NLL == DFS NLL; G1/G3/G2 produce the expected files, "
-          "leave settled inputs untouched and respect the time gates; decide() rules hold")
+          "leave settled inputs untouched and respect the time gates; probe_gold reports the exact gold NLL "
+          "without changing any output; decide() rules hold")
 
 
 if __name__ == "__main__":

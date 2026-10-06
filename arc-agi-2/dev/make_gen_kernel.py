@@ -56,6 +56,31 @@ def patch_solver(text, levers):
     return text.replace(CONST_ANCHOR, CONST_ANCHOR + f"\nGEN_LEVERS = {levers!r}\n")
 
 
+BASE_MODEL_SOURCE = "sorokin/qwen3_4b_grids15_sft139/Transformers/bfloat16/1"
+
+
+def model_path(source):
+    """'owner/slug/Framework/variation/version' -> its mount path in a kernel."""
+    owner, slug, framework, variation, version = source.split("/")
+    return f"/kaggle/input/models/{owner}/{slug}/{framework.lower()}/{variation}/{version}"
+
+
+def swap_model(nb, meta, source):
+    """Point the kernel at another DROP-IN checkpoint (same architecture and the same
+    16-token grid vocabulary; verify the directory with check_swap_model.py first)."""
+    old, new = model_path(BASE_MODEL_SOURCE), model_path(source)
+    hits = 0
+    for c in nb["cells"]:
+        s = msk.src(c)
+        if old in s:
+            hits += s.count(old)
+            msk.set_src(c, s.replace(old, new))
+    assert hits == 1, f"expected the base model path exactly once, found {hits}"
+    assert meta["model_sources"] == [BASE_MODEL_SOURCE], meta["model_sources"]
+    meta["model_sources"] = [source]
+    return nb, meta
+
+
 def build(levers, nb=None, meta=None):
     unknown = set(levers) - set(gen_boost.LEVERS_OFF)
     assert not unknown, f"unknown levers {unknown}"
@@ -118,6 +143,17 @@ def selftest():
     assert starts == ["%%writefile arc_loader.py", "%%writefile arc_decoder.py", "%%writefile select_v2.py",
                       "%%writefile gen_boost.py", "%%writefile arc_solver.py", "%%writefile starter.py"], starts
     assert "SELECT_STRATEGY = 'kgmon+priors'" in msk.src(nb2["cells"][-1])
+    # model swap: one path string + model_sources, nothing else
+    nb3, meta3 = build({"probe_gold": True})
+    nb3, meta3 = swap_model(nb3, meta3, "pranshubahadur/xcalibur-aa2-sft-500/Transformers/bf16/1")
+    s3 = msk.src(nb3["cells"][msk.find(nb3["cells"], "%%writefile arc_solver.py")])
+    assert 'model_name="/kaggle/input/models/pranshubahadur/xcalibur-aa2-sft-500/transformers/bf16/1"' in s3
+    assert "sorokin" not in s3 and meta3["model_sources"] == ["pranshubahadur/xcalibur-aa2-sft-500/Transformers/bf16/1"]
+    staged = os.path.join(msk.REPO, "submit_ag2_xcalibur", "arc-agi2-xcalibur.ipynb")
+    if os.path.exists(staged):                    # same edit as the hand-staged xcalibur kernel
+        ref = json.load(open(staged))["cells"]
+        assert model_path("pranshubahadur/xcalibur-aa2-sft-500/Transformers/bf16/1") in \
+            msk.src(ref[msk.find(ref, "%%writefile arc_solver.py")])
     # refusal paths
     for bad in ({"g9": True}, {"g1": "always"}):
         try:
@@ -135,6 +171,8 @@ if __name__ == "__main__":
     ap.add_argument("--slack", type=float)
     ap.add_argument("--levers")
     ap.add_argument("--with-select", action="store_true")
+    ap.add_argument("--model-source", help="drop-in checkpoint, e.g. owner/slug/Transformers/bf16/1")
+    ap.add_argument("--probe-gold", action="store_true", help="also write gold NLL per input (eval runs only)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -147,15 +185,21 @@ if __name__ == "__main__":
         d = gen_boost.decide(verdict["diagnostics"], a.slack)
         for line in d["why"]:
             print(" -", line)
-        if not d["changed"]:
+        if not d["changed"] and not (a.model_source or a.probe_gold):
             sys.exit("decide(): no generation lever is supported by the diagnostics; nothing built.")
         levers = {k: v for k, v in d["levers"].items() if v != gen_boost.LEVERS_OFF[k]}
+    elif a.model_source or a.probe_gold:
+        levers = {}
     else:
-        ap.error("give --verdict or --levers")
+        ap.error("give --verdict, --levers, --model-source or --probe-gold")
+    if a.probe_gold:
+        levers["probe_gold"] = True
     nb = meta = None
     if a.with_select:
         if not verdict.get("winner"):
             sys.exit("--with-select needs a verdict with a winning strategy")
         nb, meta = msk.build(verdict["winner"], verdict.get("ranker"))
     nb, meta = build(levers, nb, meta)
-    print("built", msk.write(nb, meta, OUT_DIR), "levers:", levers, "(not pushed)")
+    if a.model_source:
+        nb, meta = swap_model(nb, meta, a.model_source)
+    print("built", msk.write(nb, meta, OUT_DIR), "levers:", levers, "model:", meta["model_sources"], "(not pushed)")
