@@ -1297,7 +1297,14 @@ part attachments in that session's chat history:
   submit_ag3_flashnext_patched ipynb is the pre-ops-fix version, so the
   (18,3) adjustment does not apply here.
 - All tool --selftest pass (torch cpu venv: ~/.venv-cputorch).
-- MISSING: part 14b (make_colab_sft_nb.py, colab_sft_runbook.md,
-  colab_sft_ag2.md update) and part 14c (wm_level2_only.py,
-  wm_short_prompt.py) — never delivered to either session; requested
-  re-send from Claude. colab_sft_ag2.md is at the part-8 version.
+- MISSING (then reconstructed): part 14b (make_colab_sft_nb.py,
+  colab_sft_runbook.md, colab_sft_ag2.md update) and part 14c
+  (wm_level2_only.py, wm_short_prompt.py) never reached either session.
+  Reimplemented in this session from Claude's delivery-note index
+  (559-line spec recovered from session 514da5ce attachments), NOT
+  byte-identical to Claude's originals — same contract, verified by
+  --selftest: notebook is 0.67 MB with 10 embedded files round-tripping
+  byte-identically; wm_level2_only gates solve/explore/search/check/plan/
+  health/execute to level>=2 in either apply order w.r.t. turn_budget;
+  wm_short_prompt lands at exactly -1,043 prompt words / one 109-word
+  bullet, matching the spec's numbers exactly. Commits below.
