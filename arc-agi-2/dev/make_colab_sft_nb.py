@@ -1,303 +1,377 @@
-"""Generate the self-contained Colab SFT notebook for the AGI-2 base checkpoint.
+"""Build arc-agi-2/colab_sft_ag2.ipynb: one self-contained Colab notebook that fine-tunes the AGI-2 base
+checkpoint and uploads the merged bf16 model as a private Kaggle Model.
 
-    python3 make_colab_sft_nb.py --slug qwen3-4b-grids15-sft-a
-        -> writes arc-agi-2/colab_sft_ag2.ipynb (~0.6 MB)
-    python3 make_colab_sft_nb.py --slug qwen3-4b-grids15-sft-a --synth-share 0.0 --out colab_sft_ag2_nosynth.ipynb
+    python3 make_colab_sft_nb.py [--out ../colab_sft_ag2.ipynb] [--owner takumuhata] [--slug qwen3-4b-grids15-sft-a]
     python3 make_colab_sft_nb.py --selftest
 
-The repo cannot be pushed to a place Colab can reach, so the notebook embeds the 6 scripts
-and the 4 public ARC-AGI-2 JSONs as one zlib+base64 tarball: the only manual upload is the
-Kaggle credential (Colab secret `KAGGLE_CREDENTIALS` = contents of ~/.kaggle/credentials.json).
-"Run all" goes: GPU check -> deps -> auth -> unpack -> base download -> data build +
-contamination check -> train (auto --resume from the Drive checkpoint) -> gate -> upload as
-a private Kaggle Model -> re-download + check_swap_model.
+The repo is archived and not pushed, so the notebook carries everything it needs: the six scripts and the
+four public ARC-AGI-2 json files are embedded (gzip + base64, ~0.6 MB) and written to /content/repo with
+the repo's own layout, each checked against its sha256. Nothing is uploaded by hand except Kaggle credentials.
+Run this builder again whenever one of the embedded scripts changes; the notebook prints their hashes.
 
-Default data mix (the '@share' weights added in part 14a): public train 65% /
-gen_synth_ag2 3,000 tasks 30% / Nabidnur 410 synthetic tasks 5%; val = 50 held-out
-public-train tasks (--val-from first). 30% is a starting point, not a measured optimum --
-settle it with a panel A/B of --synth-share 0.0 vs 0.30.
-
-Cells 9-10 (kaggle CLI upload) are unverified on Colab; on failure the merged model stays
-on Drive (<OUT>/merged) and the ops VM can upload it instead. Details per cell:
-colab_sft_runbook.md.
+Cells (all plain Python, no shell magics, so every cell can be compiled and is in --selftest):
+  1 config        the only cell to edit: model slug, step budget, data shares
+  2 gpu           GPU name/VRAM -> preset (t4 / l4 / a100); refuses to continue without CUDA
+  3 deps          transformers<5, peft, safetensors, kaggle, kagglehub
+  4 credentials   Colab secret KAGGLE_CREDENTIALS, or /content/credentials.json, or an upload prompt
+  5 files         embedded scripts + data -> /content/repo, hashes verified
+  6 base          sorokin/qwen3_4b_grids15_sft139 (public) via kagglehub; check_swap_model base vs base
+  7 data          gen_synth_ag2 tasks, optional Nabidnur 410, check_sft_data on every source -> exclude.json
+  8 train         sft_ag2.py, resumable (--resume is added automatically when a checkpoint exists), output on Drive
+  9 gate          manifest must say drop_in_ok and val_improved, otherwise the notebook stops here
+ 10 upload        private Kaggle Model (create or new version)
+ 11 verify        download the uploaded copy, check_swap_model against the base, print the model source string
 """
-import argparse
 import base64
-import io
+import gzip
+import hashlib
 import json
 import os
 import sys
-import tarfile
-import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-
-# embedded into the notebook, repo-relative layout kept (check_sft_data finds the eval JSONs
-# via BASE and arc_loader via PROD, so the paths below are load-bearing, not cosmetic)
-FILES = [
-    "arc-agi-2/dev/sft_ag2.py",
-    "arc-agi-2/dev/check_sft_data.py",
-    "arc-agi-2/dev/check_swap_model.py",
-    "arc-agi-2/dev/gen_synth_ag2.py",
-    "arc-agi-2/dev/dsl_all.py",
-    "submit_ag2_perfpatch/out/arc_loader.py",
-    "arc-agi-2/arc-agi_training_challenges.json",
-    "arc-agi-2/arc-agi_training_solutions.json",
-    "arc-agi-2/arc-agi_evaluation_challenges.json",
-    "arc-agi-2/arc-agi_evaluation_solutions.json",
+EMBED = [
+    "arc-agi-2/dev/sft_ag2.py", "arc-agi-2/dev/check_sft_data.py", "arc-agi-2/dev/check_swap_model.py",
+    "arc-agi-2/dev/gen_synth_ag2.py", "arc-agi-2/dev/dsl_all.py", "submit_ag2_perfpatch/out/arc_loader.py",
+    "arc-agi-2/arc-agi_training_challenges.json", "arc-agi-2/arc-agi_training_solutions.json",
+    "arc-agi-2/arc-agi_evaluation_challenges.json", "arc-agi-2/arc-agi_evaluation_solutions.json",
 ]
 
-BASE_MODEL = "sorokin/qwen3_4b_grids15_sft139/transformers/bfloat16/1"
-NABIDNUR_URL = ("https://huggingface.co/datasets/Nabidnur/arc-agi-2-grids/resolve/main/"
-                "synthetic/curriculum_v0_verified.jsonl")
-DATA_TRAIN = "tasks:arc-agi-2/arc-agi_training_challenges.json:arc-agi-2/arc-agi_training_solutions.json"
-SYNTH_N = 3000
-TRAIN_SHARE, SYNTH_SHARE, NAB_SHARE = 0.65, 0.30, 0.05          # synth share is the knob
-MAX_STEPS, MAX_HOURS = 4000, 10.5                               # ~500 updates at accum 8
+MD_TOP = """# ARC-AGI-2: SFT of the base checkpoint on Colab -> private Kaggle Model
 
+Fine-tunes `sorokin/qwen3_4b_grids15_sft139` (LoRA, merged at the end) on the 1,000 public training tasks
+plus generated synthetic tasks, and uploads the merged bf16 model as a **private** Kaggle Model that the
+swap pipeline can mount (`--model-source <owner>/<slug>/Transformers/bf16/<n>`).
 
-def payload():
-    """The embedded files as one zlib-compressed tar -> base64 string."""
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as tf:
-        for rel in FILES:
-            tf.add(os.path.join(REPO, rel), arcname=rel)
-    return base64.b64encode(zlib.compress(buf.getvalue(), 9)).decode()
+**Before running**
+1. Runtime -> Change runtime type -> GPU. T4 works (slow, fp16 with an overflow guard); L4 or A100 is better.
+2. Kaggle credentials for the account that will own the model: Colab secret `KAGGLE_CREDENTIALS`
+   (contents of `credentials.json` or `kaggle.json`), or the file at `/content/credentials.json`.
+3. Edit the config cell if needed, then Runtime -> Run all. A recycled runtime: Run all again, training resumes.
 
+It never pushes a kernel and never submits. The 120 evaluation tasks are embedded only for the
+contamination guard; any task that shares a pair with them is dropped before training.
+"""
 
-def cell(kind, text):
-    c = {"cell_type": kind, "metadata": {}, "source": text.splitlines(keepends=True)}
-    if kind == "code":
-        c.update(outputs=[], execution_count=None)
-    return c
+CELL_CONFIG = '''# 1. CONFIG -- the only cell to edit
+OWNER = %(owner)r                 # Kaggle account that will own the model
+MODEL_SLUG = %(slug)r             # new private model; reruns add versions
+RUN_NAME = "sft_run1"             # output folder name (on Drive when USE_DRIVE)
+USE_DRIVE = True                  # keep checkpoints across recycled runtimes
+PRESET = "auto"                   # auto | t4 | l4 | a100
+MAX_STEPS = 4000                  # sequences; 8 per update -> 500 updates (xcalibur's whole run was 63)
+MAX_HOURS = 10.5                  # stop cleanly before the session limit; Run all again resumes
+N_SYNTH = 3000                    # gen_synth_ag2 tasks (0 = none)
+SYNTH_SHARE = 0.30                # share of training sequences drawn from them
+USE_NABIDNUR_410 = True           # the 410 verified synthetic tasks of Nabidnur/arc-agi-2-grids
+NABIDNUR_SHARE = 0.05
+FP16_GUARD = "auto"               # T4 only: auto | full | off (see sft_ag2.py)
+RUN_SELFTESTS = True              # ~3 min on the Colab CPU; proves the embedded code runs here
+UPLOAD = True                     # False = train and gate only
+BASE_SOURCE = "sorokin/qwen3_4b_grids15_sft139/transformers/bfloat16/1"
+assert 0 <= SYNTH_SHARE + NABIDNUR_SHARE < 1 and MODEL_SLUG and OWNER
+'''
 
+CELL_GPU = '''# 2. GPU -> preset
+import subprocess, sys
 
-def build(slug, synth_share=SYNTH_SHARE):
-    """-> notebook dict. slug is the Kaggle model slug AND the Drive run directory."""
-    assert slug and "/" not in slug and slug.replace("-", "").replace("_", "").isalnum(), slug
-    assert 0.0 <= synth_share <= 0.9
-    train_share = TRAIN_SHARE + (SYNTH_SHARE - synth_share)     # freed share goes to real tasks
-    use_synth = synth_share > 0
+def pick_preset(name, gib, wanted="auto"):
+    """GPU name + memory -> sft_ag2 preset. bf16 presets need a GPU with native bf16 (not T4/P100/K80/V100)."""
+    n = name.lower()
+    no_bf16 = any(t in n for t in ("t4", "p100", "k80", "v100", "p4"))
+    auto = "t4" if no_bf16 else ("a100" if gib >= 38 else "l4")
+    if wanted == "auto":
+        return auto
+    if wanted in ("l4", "a100") and no_bf16:
+        raise SystemExit(f"preset {wanted} needs bf16; {name} has none -- use t4")
+    if wanted == "a100" and gib < 38:
+        raise SystemExit(f"preset a100 needs ~40 GB; {name} has {gib:.0f} GB -- use l4")
+    return wanted
 
-    b64 = payload()
-    blob = "".join(f'    "{b64[i:i + 100]}"\n' for i in range(0, len(b64), 100))
+def sh(cmd, check=True, **kw):
+    print("+", cmd if isinstance(cmd, str) else " ".join(map(str, cmd)), flush=True)
+    r = subprocess.run(cmd, shell=isinstance(cmd, str), **kw)
+    if check and r.returncode:
+        raise SystemExit(f"command failed with exit code {r.returncode}")
+    return r
 
-    # data specs with the '@share' sampling weights (sft_ag2.split_spec / make_mix)
-    data_specs = [repr(DATA_TRAIN + "@" + str(train_share))]
-    if use_synth:
-        data_specs.append('"jsonl:" + SYNTH + "@' + str(synth_share) + '"')
-    data_specs.append('"jsonl:" + NAB + "@' + str(NAB_SHARE) + '"')
-    data_block = ("SYNTH = OUT + \"/synth.jsonl\"\n"
-                  "NAB = OUT + \"/nabidnur.jsonl\"\n"
-                  "DATA = [" + ", ".join(data_specs) + "]\n")
-
-    synth_lines = ""
-    if use_synth:
-        synth_lines = (
-            f"if not os.path.exists(SYNTH):\n"
-            f"    subprocess.run(f\"cd /content/repo && python arc-agi-2/dev/gen_synth_ag2.py --n {SYNTH_N} \"\n"
-            f"                   f\"--out {{SYNTH}} --seed 0\", shell=True, check=True)\n"
-            f"subprocess.run(\"cd /content/repo && python arc-agi-2/dev/gen_synth_ag2.py --verify \" + SYNTH,\n"
-            f"               shell=True, check=True)\n")
-
-    cells = [
-        cell("markdown", f"""# ARC-AGI-2 SFT in Colab -> private Kaggle Model `{slug}`
-
-One notebook = one training run = one private Kaggle Model.
-
-1. Runtime > Change runtime type > GPU (T4 free tier works; L4/A100 finish sooner).
-2. Add a Colab secret named `KAGGLE_CREDENTIALS` holding the contents of
-   `~/.kaggle/credentials.json` (the OAuth pair, not the legacy key).
-3. Runtime > Run all.
-
-Everything is resumable: the checkpoint and generated data live on Google Drive, so after a
-disconnect `Run all` picks up at the last saved checkpoint (`--resume`). Do not edit cells
-while a run is in flight. Details and per-cell pass lines: `arc-agi-2/dev/colab_sft_runbook.md`.
-"""),
-        cell("code", """import subprocess
-r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+q = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
                    capture_output=True, text=True)
-print(r.stdout.strip() or r.stderr.strip())
-name = r.stdout.lower()
-PRESET = "a100" if "a100" in name else "l4" if "l4" in name else "t4" if "t4" in name else None
-assert PRESET, "no GPU on this runtime -- Runtime > Change runtime type > GPU"
-print("preset:", PRESET)
-"""),
-        cell("code", """import subprocess
-subprocess.run("pip -q install 'transformers>=4.55,<5' 'peft>=0.13' safetensors 'kaggle>=2'",
-               shell=True, check=True)
-import torch
-print("torch", torch.__version__, "| cuda:", torch.cuda.is_available())
+assert q.returncode == 0 and q.stdout.strip(), "no GPU: Runtime -> Change runtime type -> GPU"
+GPU_NAME, GPU_MIB = [x.strip() for x in q.stdout.strip().splitlines()[0].split(",")]
+PRESET_USED = pick_preset(GPU_NAME, float(GPU_MIB) / 1024, PRESET)
+print(f"GPU {GPU_NAME} ({float(GPU_MIB) / 1024:.0f} GiB) -> preset {PRESET_USED}")
+'''
+
+CELL_DEPS = '''# 3. dependencies (torch comes with Colab)
+sh([sys.executable, "-m", "pip", "install", "-q", "transformers>=4.55,<5", "peft>=0.15", "safetensors", "kaggle>=1.7", "kagglehub"])
+import torch, transformers, peft
+print("torch", torch.__version__, "| transformers", transformers.__version__, "| peft", peft.__version__)
 assert torch.cuda.is_available()
-"""),
-        cell("code", f"""import json, os, subprocess
-from google.colab import userdata, drive
+'''
 
-os.makedirs("/root/.kaggle", exist_ok=True)
-cred = userdata.get("KAGGLE_CREDENTIALS")
-assert cred, "add the Colab secret KAGGLE_CREDENTIALS = contents of ~/.kaggle/credentials.json"
-open("/root/.kaggle/credentials.json", "w").write(cred.strip())
-os.chmod("/root/.kaggle/credentials.json", 0o600)
-OWNER = json.loads(cred).get("username") or "takumuhata"
-RUN_NAME = "{slug}"
-drive.mount("/content/drive")
-OUT = "/content/drive/MyDrive/arc_sft/" + RUN_NAME
-os.makedirs(OUT, exist_ok=True)
-r = subprocess.run(["kaggle", "models", "list", "-m"], capture_output=True, text=True)
-print(r.stdout[:400] or r.stderr[:400])
-print("owner:", OWNER, "| out:", OUT)
-"""),
-        cell("code", """# unpack the embedded repo subset (6 scripts + 4 public ARC-AGI-2 JSONs)
-import base64, glob, io, tarfile, zlib
-BLOB = (
-""" + blob + """)
-raw = zlib.decompress(base64.b64decode(BLOB))
-with tarfile.open(fileobj=io.BytesIO(raw)) as tf:
-    tf.extractall("/content/repo", filter="data")
-print(len(glob.glob("/content/repo/**/*.*", recursive=True)), "files under /content/repo")
-"""),
-        cell("code", f"""# base checkpoint + environment self-checks (~3 min CPU for the trainer selftest)
-import os, subprocess
-if not os.path.exists("/content/base/config.json"):
-    subprocess.run("kaggle models instances versions download "
-                   "{BASE_MODEL} -p /content/base --untar", shell=True, check=True)
-subprocess.run("cd /content/repo && python arc-agi-2/dev/check_swap_model.py /content/base /content/base",
-               shell=True, check=True)
-subprocess.run("cd /content/repo && python arc-agi-2/dev/check_sft_data.py --selftest", shell=True, check=True)
-subprocess.run("cd /content/repo && python arc-agi-2/dev/sft_ag2.py --selftest", shell=True, check=True)
-"""),
-        cell("code", f"""# data: synthetic tasks + the Nabidnur 410, then the contamination/format check.
-# Files live on Drive: regenerated deterministically (seed 0) only if missing.
-import os, subprocess
-{data_block}if not os.path.exists(NAB):
-    subprocess.run("wget -q -O " + NAB + " {NABIDNUR_URL}", shell=True, check=True)
-{synth_lines}subprocess.run("cd /content/repo && python arc-agi-2/dev/check_sft_data.py " +
-               " ".join(s.split("@")[0] for s in DATA) + " --write-exclude " + OUT + "/exclude.json",
-               shell=True, check=True)
-"""),
-        cell("code", f"""# train (auto-resumes from the Drive checkpoint after a disconnect)
-import os, subprocess
-cmd = ("cd /content/repo && python arc-agi-2/dev/sft_ag2.py --model /content/base --out " + OUT +
-       " --preset " + PRESET + " --max-steps {MAX_STEPS} --max-hours {MAX_HOURS}"
-       " --exclude " + OUT + "/exclude.json --val-from first" + "".join(" --data " + s for s in DATA))
-if os.path.exists(OUT + "/ckpt.pt"):
-    cmd += " --resume"
-    print("resuming from the Drive checkpoint")
-print(cmd)
-subprocess.run(cmd, shell=True, check=True)
-"""),
-        cell("code", """# gate: nothing leaves this notebook unless the merged model is a drop-in AND val improved
-import json
-m = json.load(open(OUT + "/manifest.json"))
-print(json.dumps({{k: m[k] for k in ("steps", "updates", "train_loss_first", "train_loss_last",
-                                    "val_loss_before", "val_loss_after", "val_improved",
-                                    "drop_in_ok", "fp16_guard")}}, indent=1))
-assert m["drop_in_ok"], "merged dir is not a drop-in for the base -- do not upload"
-assert m["val_improved"], "held-out val loss got worse -- do not upload (a panel would waste a run)"
-print("GATE PASS -- uploading as a private Kaggle Model")
-"""),
-        cell("code", """# upload: model resource, then the merged dir as a transformers/bf16 instance.
-# UNVERIFIED on Colab: if this fails, merged weights stay on Drive -- upload from the ops VM
-# instead (colab_sft_runbook.md, "hand over").
-import json, os, subprocess
-MERGED = OUT + "/merged"
-meta_dir = "/content/meta_" + RUN_NAME
-os.makedirs(meta_dir, exist_ok=True)
-subprocess.run("kaggle models init -p " + meta_dir, shell=True, check=True)
-mp = meta_dir + "/model-metadata.json"
-meta = json.load(open(mp))
-meta.update(ownerSlug=OWNER, title=RUN_NAME, slug=RUN_NAME, isPrivate=True)
-json.dump(meta, open(mp, "w"))
-r = subprocess.run("kaggle models create -p " + meta_dir, shell=True)   # 'already exists' is fine
-print("model create rc:", r.returncode)
-subprocess.run("kaggle models instances init -p " + MERGED, shell=True, check=True)
-ip = MERGED + "/model-instance-metadata.json"
-im = json.load(open(ip))
-im.update(ownerSlug=OWNER, modelSlug=RUN_NAME, instanceSlug="bf16", framework="transformers")
-json.dump(im, open(ip, "w"))
-r = subprocess.run("kaggle models instances create -p " + MERGED, shell=True)
-if r.returncode:     # instance exists -> a new version
-    subprocess.run("kaggle models instances versions create " + OWNER + "/" + RUN_NAME +
-                   "/transformers/bf16 -p " + MERGED + " -n update", shell=True, check=True)
-"""),
-        cell("code", """# verify the uploaded copy, then hand over
-import subprocess
-subprocess.run("kaggle models instances versions download " + OWNER + "/" + RUN_NAME +
-               "/transformers/bf16/1 -p /content/verify --untar", shell=True, check=True)
-subprocess.run("cd /content/repo && python arc-agi-2/dev/check_swap_model.py /content/verify /content/base",
-               shell=True, check=True)
-print("DONE. On the ops VM: swap_runbook.md step 2 with "
-      "--model-source " + OWNER + "/" + RUN_NAME + "/Transformers/bf16/1")
-"""),
-        cell("markdown", """Done when the last cell prints DONE. The model source string printed there
-goes straight into `make_gen_kernel.py --model-source` (or `make_union_kernel.py --second`)
-for the panel comparison -- see `arc-agi-2/dev/swap_runbook.md`.
-"""),
-    ]
-    return {"cells": cells,
-            "metadata": {"kernelspec": {"display_name": "Python 3", "name": "python3"},
-                         "language_info": {"name": "python"},
-                         "accelerator": "GPU",
-                         "colab": {"provenance": []}},
-            "nbformat": 4, "nbformat_minor": 5}
+CELL_CREDS = '''# 4. Kaggle credentials (never printed)
+import json, os, pathlib, stat
+kd = pathlib.Path.home() / ".kaggle"
+kd.mkdir(exist_ok=True)
+raw = None
+try:
+    from google.colab import userdata
+    raw = userdata.get("KAGGLE_CREDENTIALS")
+except Exception:
+    raw = None
+for p in ("/content/credentials.json", "/content/kaggle.json"):
+    if not raw and os.path.exists(p):
+        raw = open(p).read()
+if not raw:
+    from google.colab import files
+    raw = next(iter(files.upload().values())).decode()
+cred = json.loads(raw)
+name = "kaggle.json" if "key" in cred else "credentials.json"       # legacy API key vs OAuth credentials
+(kd / name).write_text(json.dumps(cred))
+os.chmod(kd / name, stat.S_IRUSR | stat.S_IWUSR)
+who = cred.get("username") or cred.get("user_name") or "?"
+print("kaggle credentials written:", name, "| user:", who)
+if who not in ("?", OWNER):
+    print(f"WARNING: credentials are for {who!r} but OWNER is {OWNER!r}; the upload cell will use OWNER")
+'''
+
+CELL_FILES = '''# 5. embedded scripts + public ARC-AGI-2 json -> /content/repo (repo layout), hashes verified
+import base64, gzip, hashlib
+FILES = %(files)s
+ROOT = pathlib.Path("/content/repo")
+for rel, (sha, blob) in FILES.items():
+    data = gzip.decompress(base64.b64decode(blob))
+    assert hashlib.sha256(data).hexdigest() == sha, f"corrupt embedded file: {rel}"
+    (ROOT / rel).parent.mkdir(parents=True, exist_ok=True)
+    (ROOT / rel).write_bytes(data)
+    print(f"{sha[:12]}  {len(data):>9,}  {rel}")
+DEV = ROOT / "arc-agi-2" / "dev"
+TRAIN_SPEC = f"tasks:{ROOT}/arc-agi-2/arc-agi_training_challenges.json:{ROOT}/arc-agi-2/arc-agi_training_solutions.json"
+'''
+
+CELL_BASE = '''# 6. base checkpoint (public) + drop-in self-check + selftests of the embedded code
+import kagglehub
+BASE = kagglehub.model_download(BASE_SOURCE)
+print("base:", BASE)
+sh([sys.executable, str(DEV / "check_swap_model.py"), BASE, BASE])
+if RUN_SELFTESTS:
+    sh([sys.executable, str(DEV / "check_sft_data.py"), "--selftest"])
+    sh([sys.executable, str(DEV / "gen_synth_ag2.py"), "--selftest"])
+    sh([sys.executable, str(DEV / "sft_ag2.py"), "--selftest"])
+'''
+
+CELL_DATA = '''# 7. data: public train (held-out val comes from here) + synthetic sources with fixed sampling shares
+import urllib.request
+if USE_DRIVE:
+    from google.colab import drive
+    drive.mount("/content/drive")
+    OUT = pathlib.Path("/content/drive/MyDrive") / RUN_NAME
+else:
+    OUT = pathlib.Path("/content") / RUN_NAME
+OUT.mkdir(parents=True, exist_ok=True)
+DATA = [TRAIN_SPEC]                              # first source: the only one validation tasks are taken from
+CHECK = [TRAIN_SPEC]
+if N_SYNTH:
+    synth = OUT / f"synth_{N_SYNTH}.jsonl"       # kept with the run so a resumed session trains on the same tasks
+    if not synth.exists():
+        sh([sys.executable, str(DEV / "gen_synth_ag2.py"), "--n", str(N_SYNTH), "--out", str(synth), "--seed", "0", "--exclude-train"])
+    sh([sys.executable, str(DEV / "gen_synth_ag2.py"), "--verify", str(synth)])
+    DATA.append(f"jsonl:{synth}@{SYNTH_SHARE}")
+    CHECK.append(f"jsonl:{synth}")
+if USE_NABIDNUR_410:
+    nab = OUT / "nabidnur_410.jsonl"
+    if not nab.exists():
+        try:
+            urllib.request.urlretrieve("https://huggingface.co/datasets/Nabidnur/arc-agi-2-grids/resolve/main/"
+                                       "synthetic/curriculum_v0_verified.jsonl", nab)
+        except Exception as exc:
+            print("Nabidnur 410 not downloaded, continuing without it:", repr(exc)[:200])
+    if nab.exists():
+        DATA.append(f"jsonl:{nab}@{NABIDNUR_SHARE}")
+        CHECK.append(f"jsonl:{nab}")
+EXCLUDE = OUT / "exclude.json"
+sh([sys.executable, str(DEV / "check_sft_data.py")] + CHECK + ["--write-exclude", str(EXCLUDE)])
+print("training sources:", DATA)
+'''
+
+CELL_TRAIN = '''# 8. train (resumable: when a checkpoint exists the same command continues it)
+cmd = [sys.executable, str(DEV / "sft_ag2.py"), "--model", BASE, "--out", str(OUT), "--preset", PRESET_USED,
+       "--max-steps", str(MAX_STEPS), "--max-hours", str(MAX_HOURS), "--exclude", str(EXCLUDE),
+       "--val-from", "first", "--fp16-guard", FP16_GUARD, "--log-every", "25", "--save-every", "200"]
+for spec in DATA:
+    cmd += ["--data", spec]
+if (OUT / "ckpt.pt").exists():
+    cmd.append("--resume")
+if (OUT / "manifest.json").exists():
+    print("manifest.json already exists in", OUT, "-- training is finished; delete it or change RUN_NAME to train again")
+else:
+    sh(cmd)
+'''
+
+CELL_GATE = '''# 9. gate: stop here unless the run finished, is a drop-in and improved held-out loss
+mf = OUT / "manifest.json"
+if not mf.exists():
+    raise SystemExit("training stopped before the last step (time budget or disconnect): Run all again to resume")
+M = json.loads(mf.read_text())
+print(json.dumps({k: M[k] for k in ("steps", "updates", "train_loss_first", "train_loss_last", "val_loss_before",
+                                    "val_loss_after", "val_improved", "non_finite_steps", "skipped_updates",
+                                    "fp16_guard", "drop_in_ok") if k in M}, indent=1))
+assert M["drop_in_ok"], "merged model is NOT a drop-in: do not upload"
+assert M["val_improved"], "held-out loss got worse: do not upload (lower the learning rate or the step count)"
+MERGED = OUT / "merged"
+'''
+
+CELL_UPLOAD = '''# 10. upload as a PRIVATE Kaggle Model (first run creates it, later runs add a version)
+if not UPLOAD:
+    raise SystemExit("UPLOAD is False: stopping after the gate")
+meta = pathlib.Path("/content/model_meta")
+meta.mkdir(exist_ok=True)
+(meta / "model-metadata.json").write_text(json.dumps({
+    "ownerSlug": OWNER, "title": MODEL_SLUG, "slug": MODEL_SLUG, "subtitle": "", "isPrivate": True,
+    "description": "sft139 + LoRA SFT (merged, bf16). Private.", "publishTime": "", "provenanceSources": ""}, indent=1))
+notes = f"{RUN_NAME}: {M['updates']} updates, val {M['val_loss_before']:.4f} -> {M['val_loss_after']:.4f}"
+(MERGED / "model-instance-metadata.json").write_text(json.dumps({
+    "ownerSlug": OWNER, "modelSlug": MODEL_SLUG, "instanceSlug": "bf16", "framework": "transformers",
+    "overview": notes, "usage": "drop-in for sorokin/qwen3_4b_grids15_sft139 (16-token vocabulary)",
+    "licenseName": "Apache 2.0", "fineTunable": True, "trainingData": [], "modelInstanceType": "Unspecified",
+    "baseModelInstanceId": 0, "externalBaseModelUrl": ""}, indent=1))
+sh(["kaggle", "models", "create", "-p", str(meta)], check=False)             # "already exists" is fine
+first = sh(["kaggle", "models", "instances", "create", "-p", str(MERGED)], check=False)
+if first.returncode:
+    sh(["kaggle", "models", "instances", "versions", "create", f"{OWNER}/{MODEL_SLUG}/transformers/bf16",
+        "-p", str(MERGED), "-n", notes])
+'''
+
+CELL_VERIFY = '''# 11. verify the uploaded copy and print what to hand over
+import re, shutil, time
+ver = pathlib.Path("/content/verify")
+shutil.rmtree(ver, ignore_errors=True)
+listing = subprocess.run(["kaggle", "models", "instances", "versions", "list", f"{OWNER}/{MODEL_SLUG}/transformers/bf16"],
+                         capture_output=True, text=True).stdout
+nums = [int(x) for x in re.findall(r"^\\s*(\\d+)\\s", listing, flags=re.M)]
+VERSION = max(nums) if nums else 1
+for attempt in range(10):                        # a new version takes a few minutes to become downloadable
+    r = sh(["kaggle", "models", "instances", "versions", "download",
+            f"{OWNER}/{MODEL_SLUG}/transformers/bf16/{VERSION}", "-p", str(ver), "--untar"], check=False)
+    if r.returncode == 0 and any(ver.glob("*.safetensors")):
+        break
+    time.sleep(60)
+else:
+    raise SystemExit("uploaded version did not become downloadable in 10 minutes; check the model page")
+sh([sys.executable, str(DEV / "check_swap_model.py"), str(ver), BASE])
+print("\\nHAND OVER:  --model-source", f"{OWNER}/{MODEL_SLUG}/Transformers/bf16/{VERSION}")
+print("manifest:", mf)
+'''
 
 
-def write(nb, path):
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(nb, f, indent=1, ensure_ascii=False)
-    return path
+def embed():
+    out = {}
+    for rel in EMBED:
+        data = open(os.path.join(REPO, rel), "rb").read()
+        out[rel] = (hashlib.sha256(data).hexdigest(), base64.b64encode(gzip.compress(data, 9, mtime=0)).decode())
+    return out
+
+
+def cells(owner, slug):
+    files = "{\n" + "".join("    %r: (%r,\n        %r),\n" % (k, v[0], v[1]) for k, v in embed().items()) + "}"
+    return [("markdown", MD_TOP), ("code", CELL_CONFIG % dict(owner=owner, slug=slug)), ("code", CELL_GPU),
+            ("code", CELL_DEPS), ("code", CELL_CREDS), ("code", CELL_FILES % dict(files=files)), ("code", CELL_BASE),
+            ("code", CELL_DATA), ("code", CELL_TRAIN), ("code", CELL_GATE), ("code", CELL_UPLOAD), ("code", CELL_VERIFY)]
+
+
+def build(owner="takumuhata", slug="qwen3-4b-grids15-sft-a"):
+    nb = {"nbformat": 4, "nbformat_minor": 5,
+          "metadata": {"colab": {"provenance": [], "gpuType": "T4"}, "accelerator": "GPU",
+                       "kernelspec": {"display_name": "Python 3", "name": "python3"}, "language_info": {"name": "python"}},
+          "cells": []}
+    for i, (kind, src) in enumerate(cells(owner, slug)):
+        cell = {"cell_type": kind, "metadata": {}, "source": src.splitlines(keepends=True), "id": "sft%02d" % i}
+        if kind == "code":
+            cell.update(execution_count=None, outputs=[])
+        nb["cells"].append(cell)
+    return nb
 
 
 def selftest():
+    import subprocess
     import tempfile
-    for share in (0.3, 0.0):
-        nb = build("qwen3-4b-grids15-sft-a", synth_share=share)
-        assert nb["nbformat"] == 4 and len(nb["cells"]) == 12
-        for c in nb["cells"]:
-            if c["cell_type"] == "code":
-                compile("".join(c["source"]), "<cell>", "exec")
-        src = "".join("".join(c["source"]) for c in nb["cells"])
-        assert "--val-from first" in src and "--resume" in src and "userdata.get" in src
-        assert "drop_in_ok" in src and "val_improved" in src and "0.05" in src
-        if share > 0:
-            assert "@0.3" in src and f"gen_synth_ag2.py --n {SYNTH_N}" in src
-            assert '"jsonl:" + SYNTH + "@"' not in src  # shares are literals, not expressions
-        else:
-            assert "gen_synth_ag2.py --verify" not in src and "SYNTH" not in src.split("DATA =")[1].split("]")[0]
-        # the payload extracts to byte-identical copies
-        blob_cell = next("".join(c["source"]) for c in nb["cells"] if "BLOB = (" in "".join(c["source"]))
-        seg = blob_cell.split("BLOB = (", 1)[1]
-        blob = eval("(" + seg[:seg.index("\n)")] + ")")
-        raw = zlib.decompress(base64.b64decode(blob))
-        with tempfile.TemporaryDirectory() as d:
-            with tarfile.open(fileobj=io.BytesIO(raw)) as tf:
-                tf.extractall(d, filter="data")
-            for rel in FILES:
-                assert open(os.path.join(d, rel), "rb").read() == open(os.path.join(REPO, rel), "rb").read(), rel
-        with tempfile.NamedTemporaryFile(suffix=".ipynb", delete=False) as f:
-            p = f.name
-        write(nb, p)
-        size = os.path.getsize(p)
-        os.unlink(p)
-        assert size < 1_500_000, size
-        print(f"share={share}: notebook {size / 1e6:.2f} MB, {len(FILES)} embedded files byte-identical")
-    print("selftest ok: valid nbformat; all code cells compile; mix @ shares with --val-from first; "
-          "--synth-share 0.0 drops the synthetic spec and its generator call; gate needs drop_in_ok AND "
-          "val_improved; resume watches the Drive ckpt; upload + verify cells carry the slug")
+    nb = build()
+    code = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
+    assert len(code) == 11 and json.loads(json.dumps(nb)) == nb
+    for i, src in enumerate(code):
+        compile(src, "cell%d" % (i + 1), "exec")                       # no shell magics anywhere
+        assert not any(ln.lstrip().startswith(("!", "%")) for ln in src.splitlines()), i
+    # the config cell runs, and the preset choice is right for the GPUs Colab hands out
+    ns = {}
+    exec(code[0], ns)
+    gpu = code[1].split("q = subprocess.run")[0]
+    exec(gpu, ns)
+    pick = ns["pick_preset"]
+    assert [pick(n, g) for n, g in (("Tesla T4", 15), ("NVIDIA L4", 22.5), ("NVIDIA A100-SXM4-40GB", 40),
+                                    ("NVIDIA A100-SXM4-80GB", 80), ("Tesla V100-SXM2-16GB", 16))] == ["t4", "l4", "a100", "a100", "t4"]
+    assert pick("NVIDIA L4", 22.5, "t4") == "t4"
+    for bad in (("Tesla T4", 15, "l4"), ("NVIDIA L4", 22.5, "a100")):
+        try:
+            pick(*bad)
+            raise AssertionError("accepted %r" % (bad,))
+        except SystemExit:
+            pass
+    # the files cell reproduces every embedded file byte for byte, and the extracted tree runs
+    with tempfile.TemporaryDirectory() as tmp:
+        src = code[4].replace('pathlib.Path("/content/repo")', "pathlib.Path(%r)" % tmp)
+        assert src != code[4]
+        ns2 = {"pathlib": __import__("pathlib"), "print": lambda *a, **k: None}
+        exec(src, ns2)
+        for rel in EMBED:
+            assert open(os.path.join(tmp, rel), "rb").read() == open(os.path.join(REPO, rel), "rb").read(), rel
+        assert ns2["TRAIN_SPEC"].startswith("tasks:" + tmp)
+        dev = os.path.join(tmp, "arc-agi-2", "dev")
+        for script, args in (("check_sft_data.py", ["--selftest"]), ("check_swap_model.py", ["--selftest"]),
+                             ("gen_synth_ag2.py", ["--n", "40", "--out", os.path.join(tmp, "s.jsonl"), "--seed", "0", "--exclude-train"]),
+                             ("gen_synth_ag2.py", ["--verify", os.path.join(tmp, "s.jsonl")])):
+            r = subprocess.run([sys.executable, os.path.join(dev, script)] + args, capture_output=True, text=True)
+            assert r.returncode == 0, (script, r.stdout[-400:], r.stderr[-400:])
+        # the data cell's sources pass the trainer's own loader with the mix the notebook asks for
+        sys.path.insert(0, dev)
+        try:
+            import importlib
+            mod = importlib.import_module("sft_ag2")              # module level needs numpy only, not torch
+            specs = [ns2["TRAIN_SPEC"], "jsonl:%s@0.3" % os.path.join(tmp, "s.jsonl")]
+            tr, va, source = mod.load_tasks(specs, log=lambda *_: None, val_from="first", with_sources=True)
+            mix = mod.make_mix(specs, tr, source)
+            assert all(source[t] == 0 for t in va) and len(va) == 50 and abs(mix[0][0] - 0.7) < 1e-9
+            assert sum(source[t] == 1 for t in tr) == 40 and sum(source[t] == 0 for t in tr) == 950
+        finally:
+            sys.path.remove(dev)
+    # the train command the notebook builds is accepted by the trainer's argument parser
+    tr_src = code[7]
+    for flag in ("--val-from", "--fp16-guard", "--max-hours", "--exclude", "--preset", "--resume"):
+        assert flag in tr_src
+    args = mod.parser().parse_args(["--model", "b", "--out", "o", "--preset", "t4", "--max-steps", "4000", "--max-hours", "10.5",
+                                    "--exclude", "e", "--val-from", "first", "--fp16-guard", "auto", "--log-every", "25",
+                                    "--save-every", "200", "--data", "x", "--data", "jsonl:y@0.3", "--resume"])
+    assert args.val_from == "first" and args.fp16_guard == "auto" and args.resume and len(args.data) == 2
+    size = len(json.dumps(nb))
+    assert size < 2_000_000
+    print("selftest ok: 11 code cells compile without shell magics; preset choice T4/L4/A100/V100 correct; the files "
+          "cell restores all %d embedded files byte for byte and the restored tree runs check_sft_data, check_swap_model "
+          "and gen_synth_ag2; the notebook's data sources load with a 70/30 mix and 50 held-out public tasks; "
+          "the train command parses; notebook size %.2f MB" % (len(EMBED), size / 1e6))
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--slug", default="qwen3-4b-grids15-sft-a")
-    ap.add_argument("--synth-share", type=float, default=SYNTH_SHARE, dest="synth_share")
-    ap.add_argument("--out", default=os.path.join(REPO, "arc-agi-2", "colab_sft_ag2.ipynb"))
-    ap.add_argument("--selftest", action="store_true")
-    a = ap.parse_args()
-    if a.selftest:
+    a = sys.argv[1:]
+    if a[:1] == ["--selftest"]:
         selftest()
         sys.exit(0)
-    nb = build(a.slug, a.synth_share)
-    print("wrote", write(nb, a.out), f"({os.path.getsize(a.out) / 1e6:.2f} MB)",
-          "slug:", a.slug, "| synth share:", a.synth_share, "(not uploaded)")
+    opt = {k: a[a.index(k) + 1] for k in ("--out", "--owner", "--slug") if k in a}
+    out = opt.get("--out", os.path.join(os.path.dirname(HERE), "colab_sft_ag2.ipynb"))
+    nb = build(opt.get("--owner", "takumuhata"), opt.get("--slug", "qwen3-4b-grids15-sft-a"))
+    with open(out, "w") as f:
+        json.dump(nb, f, indent=1)
+        f.write("\n")
+    print("wrote %s (%.2f MB, %d cells). Embedded:" % (out, os.path.getsize(out) / 1e6, len(nb["cells"])))
+    for rel, (sha, _) in embed().items():
+        print("  %s  %s" % (sha[:16], rel))

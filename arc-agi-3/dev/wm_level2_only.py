@@ -1,62 +1,56 @@
-"""World-model verbs gated to level 2+: level 1 is always played by hand.
+"""Lose branch of the wm arm: the world model is only used from level 2 on.
 
-    python3 wm_level2_only.py <bundle>/src/ARC3-Inference [--dry-run]
+    python3 wm_level2_only.py <bundle>/src/ARC3-Inference [--dry-run] [--min-level 2]
     python3 wm_level2_only.py --selftest
     python3 wm_level2_only.py --print-prompt
 
-Applies ON TOP of apply_wm_patch.py, wm_round2.py, wm_round3.py, wm_search.py and
-wm_modes.py --mode full; turn_budget.py may come before or after it (both orders work --
-the gate is the outermost wrapper either way). Anchors must match exactly once or nothing
-is written; re-running is a no-op.
+Applies ON TOP of apply_wm_patch.py, wm_round2.py, wm_round3.py, wm_search.py and wm_modes.py --mode full
+(turn_budget.py before or after, both orders work). Anchors must match exactly once; re-running is a no-op.
 
-Why (the <=5.7 branch of medal_closeout.md 2.2): the wm arm lost clearly, but ripping the
-whole toolkit out (toolbox) throws away what DID work -- the losing move was paying level-1
-turns to write parse/step/is_goal on almost no evidence. This build keeps the helpers
-(changes/objects/cells/hud/clean/budget/report) on every level and refuses only the acting
-verbs on level 1:
-    wm.solve / wm.explore / wm.search / wm.check / wm.plan / wm.health / wm.execute
-        -> {"stage": "level1", "do": "play this level by hand: ..."}
-The model probes level 1 directly (each untried action once, ONE call), reads wm.changes()
-and drafts the rule functions in its notes; from level 2 the armed verbs work as usual,
-now with a full level-1 history to check the model against.
+Why: when the wm arm loses to the notes arm, the cost is paid on level 1 -- the model spends its first
+turns writing parse/step/is_goal for a game it has not understood yet. Later levels reuse the mechanics
+and weigh more in the score (level index is the weight), so that is where a model pays off.
+
+What changes
+  wm.solve / explore / search / check / plan / health   on a level below --min-level return
+        {'stage': 'level<k>', 'do': ...} and take no action; from --min-level on they behave as before.
+  wm.changes / objects / cells / hud / report / budget   unchanged on every level (no model needed).
+  prompts.py   one bullet telling the model not to write the three functions on level 1.
+The level is read from current_frame.level at call time, so nothing is remembered between calls.
 """
 import argparse
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MARK_SRC = '"stage": "level1"'
-MARK_PROMPT = "- LEVEL 1 IS PLAYED BY HAND"
+MARK_SRC = "_WM_MIN_LEVEL"
+MARK_PROMPT = "- WM FROM LEVEL"
 
-GATED = ("check", "plan", "execute", "solve", "health", "explore", "search")
-
-GATE = '''
-    LEVEL1 = {"stage": "level1",
-              "do": "the world model is armed from level 2: play this level by hand -- try each untried action "
-                    "once (ONE call), read wm.changes() after it, and draft parse/step/is_goal in your notes"}
-    def _lv(f):
+BUILD_ANCHOR = '\n\ndef _wm_build():\n'
+GATE_ANCHOR = '    if _WM_MODE == "toolbox":\n'
+GATE = '''    def gated(f):
         def call(*a, **k):
-            lvl = getattr(G().get("current_frame"), "level", 1) or 1
-            if lvl < 2:
-                return dict(LEVEL1)
+            lvl = getattr(G().get("current_frame"), "level", None)
+            if isinstance(lvl, int) and lvl < _WM_MIN_LEVEL:
+                return {"stage": "level%d" % lvl,
+                        "do": "world-model calls start at level %d: finish this level by acting directly "
+                              "(wm.changes() and wm.budget() work now), then write parse/step/is_goal" % _WM_MIN_LEVEL}
             return f(*a, **k)
         return call
-    for name in ("check", "plan", "execute", "solve", "health", "explore", "search"):
+    for name in ("solve", "explore", "search", "check", "plan", "health"):
         if name in ns:
-            ns[name] = _lv(ns[name])
+            ns[name] = gated(ns[name])
 '''
-
-WM_EDITS = [
-    ('    return type("wm", (), ns)\n', GATE + '    return type("wm", (), ns)\n'),
-]
-
 PROMPT_ANCHOR = '    "- Use `print(...)` for compact summaries, or assign a final compact object to `result`.\\n"\n'
 
-PROMPT_LINES = [
-    "- LEVEL 1 IS PLAYED BY HAND: `wm.solve`/`wm.explore`/`wm.search`/`wm.check`/`wm.plan`/`wm.health`/`wm.execute` "
-    "answer `stage 'level1'` and do nothing until the first level is cleared. Probe each untried action once (ONE "
-    "call), read `wm.changes()`, draft parse/step/is_goal in your notes -- the verbs arm themselves from level 2 on.",
-]
+
+def prompt_lines(min_level):
+    return [
+        "- WM FROM LEVEL %d: on the first level%s do NOT write `parse` / `step` / `is_goal`. Learn the game by acting: "
+        "send batches of actions and read `wm.changes()` after them; `wm.solve()` only answers stage 'level1' there. "
+        "Once level %d starts, write the three functions from what you learned and call `out = wm.solve()` every turn."
+        % (min_level, "" if min_level == 2 else "s", min_level),
+    ]
 
 
 def _py_str(text):
@@ -72,40 +66,38 @@ def _patch(text, edits, what):
     return text
 
 
-def patch_wm_source(src):
-    """modes-level WM_SOURCE -> with the level-2 gate on the acting verbs. Idempotent."""
+def patch_wm_source(src, min_level=2):
     if MARK_SRC in src:
         return src
-    if '_WM_MODE = "toolbox"' in src:
-        raise SystemExit("bundle is in toolbox mode -- wm_level2_only is for the --mode full arm")
     if "def report(notes" not in src:
         raise SystemExit("WM_SOURCE has no wm.report -- apply wm_modes.py --mode full first")
-    out = _patch(src, WM_EDITS, "WM_SOURCE")
+    if '_WM_MODE = "toolbox"' in src:
+        raise SystemExit("WM_SOURCE is in toolbox mode: there is no world model to delay")
+    out = _patch(src, [(BUILD_ANCHOR, "\n_WM_MIN_LEVEL = %d" % int(min_level) + BUILD_ANCHOR),
+                       (GATE_ANCHOR, GATE + GATE_ANCHOR)], "WM_SOURCE")
     compile(out, "<wm>", "exec")
     return out
 
 
-def patch_prompts(text):
+def patch_prompts(text, min_level=2):
     if MARK_PROMPT in text:
         return text
-    if "- TOOLBOX" in text:
-        raise SystemExit("prompts.py is in toolbox mode -- wm_level2_only is for the --mode full arm")
-    block = "".join("    " + _py_str(line + "\n") + "\n" for line in PROMPT_LINES)
+    block = "".join("    " + _py_str(line + "\n") + "\n" for line in prompt_lines(min_level))
     out = _patch(text, [(PROMPT_ANCHOR, block + PROMPT_ANCHOR)], "prompts.py")
     compile(out, "prompts.py", "exec")
     return out
 
 
-def apply(root, dry_run=False):
+def apply(root, dry_run=False, min_level=2):
     agent = os.path.join(root, "inference", "agent")
     ws_path, pr_path = os.path.join(agent, "wm_source.py"), os.path.join(agent, "prompts.py")
     if not os.path.exists(ws_path):
-        raise SystemExit("wm_source.py not found -- apply the wm stack and wm_modes.py first")
+        raise SystemExit("wm_source.py not found -- apply the wm stack first")
     ns = {}
     ws_text = open(ws_path).read()
     exec(compile(ws_text, ws_path, "exec"), ns)
     pr_text = open(pr_path).read()
-    new_src, new_pr = patch_wm_source(ns["WM_SOURCE"]), patch_prompts(pr_text)
+    new_src, new_pr = patch_wm_source(ns["WM_SOURCE"], min_level), patch_prompts(pr_text, min_level)
     if new_src == ns["WM_SOURCE"] and new_pr == pr_text:
         return "already patched"
     if dry_run:
@@ -119,72 +111,80 @@ def apply(root, dry_run=False):
 def selftest():
     import tempfile
     sys.path.insert(0, HERE)
+    import turn_budget
     import wm_modes
     import wm_round2 as r2
     import wm_search
-    import turn_budget
-
-    LEVEL1_SOLVE = ["UP", "UP", "RIGHT", "RIGHT", "RIGHT", "DOWN", "RIGHT", "UP", "UP"]
-    for order in ("budget_first", "gate_first"):
+    for order in ("budget_first", "budget_last"):
+        steps = [lambda d: wm_modes.apply(d, "full")]
+        mine = lambda d: [apply(d, dry_run=True), apply(d)]                                  # noqa: E731
+        budget = lambda d: turn_budget.apply(d, game_seconds=1000.0)                         # noqa: E731
+        steps += [budget, mine] if order == "budget_first" else [mine, budget]
         with tempfile.TemporaryDirectory() as tmp:
-            extra = ([lambda d: turn_budget.apply(d), lambda d: apply(d)] if order == "budget_first"
-                     else [lambda d: apply(d), lambda d: turn_budget.apply(d)])
-            sb, prompts, wm_source, dst = wm_search.patched_sandbox(
-                tmp, extra=[lambda d: wm_modes.apply(d, "full")] + extra)
-            assert apply(dst) == "already patched"
+            sb, prompts, wm_source, dst = wm_search.patched_sandbox(tmp, extra=steps)
+            assert apply(dst) == "already patched" and "_WM_MIN_LEVEL = 2" in wm_source.WM_SOURCE
             pa = prompts.PYTHON_ADDENDUM
-            assert pa.count("LEVEL 1 IS PLAYED BY HAND") == 1
-            assert pa.index("LEVEL 1 IS PLAYED BY HAND") < pa.index("- Use `print(...)`")
-
-            # 1. level 1: every acting verb is off, no action is burned
+            assert pa.count("WM FROM LEVEL 2") == 1 and pa.index("WM FROM LEVEL 2") < pa.index("- Use `print(...)`")
             g = r2.MoveGame()
             call = r2._harness(sb, g)
-            code = ("result = [wm.solve(), wm.explore(), wm.search(), wm.check(), wm.plan(), "
-                    "wm.health(), wm.execute(['RIGHT'])]")
-            r = call(code, r2.MOVE_RULES)
-            assert [x["stage"] for x in r] == ["level1"] * 7 and g.steps == 0, r
-            assert all("play this level by hand" in x["do"] for x in r)
-
-            # 2. level 1: helpers and the governor still work
-            r = call("result = [wm.budget(), wm.report({'goal': '?'}), wm.changes()]", "")
-            assert r[0]["phase"] == "probe" and r[0]["untried"], r[0]
-            assert "budget" in r[1] or r[1]["wm"] == {}
-            assert "error" in r[2]
-
-            # 3. level 1 by hand -> the same wm.solve() runs on level 2
-            r = call("action(%r)\nresult = [wm.solve(), wm.check()]" % LEVEL1_SOLVE, r2.MOVE_RULES)
-            assert g.level == 3, (g.level, r)                    # solve cleared level 2 too
-            assert r[0]["stage"] == "execute" and r[0]["execute"]["level_completed"], r[0]
-            assert r[1].get("stage") != "level1" and "acc" in r[1]           # check ran for real
-
-            # 4. refusing on a toolbox-mode build
-            with tempfile.TemporaryDirectory() as tmp2:
-                sb2, prompts2, ws2, dst2 = wm_search.patched_sandbox(
-                    tmp2, extra=[lambda d: wm_modes.apply(d, "toolbox")])
-                try:
-                    apply(dst2)
-                    raise SystemExit("level2 gate applied on a toolbox bundle")
-                except SystemExit as e:
-                    assert "toolbox" in str(e)
-
-            if order == "budget_first":
-                words = sum(len(x.split()) for x in PROMPT_LINES)
-
-    print("selftest ok (real sandbox subprocess, search + modes full + gate on bundle_fast):")
-    print("  level 1: solve/explore/search/check/plan/health/execute all answer stage 'level1' and burn "
-          "nothing; changes/budget/report still work")
-    print("  cleared level 1 by hand -> the same wm.solve() finished level 2; gate+turn_budget apply in "
-          f"either order; prompt: {words} words")
+            # level 1: every model verb is held back and nothing is played, even with correct rules loaded
+            r = call("result = [wm.solve(), wm.explore(), wm.search(), wm.check(), wm.plan(), wm.health()]", r2.MOVE_RULES)
+            assert [x["stage"] for x in r] == ["level1"] * 6 and g.steps == 0 and "level 2" in r[0]["do"], r
+            # helpers and the governor still work on level 1; report carries the notes
+            r = call("action(['RIGHT'])\nresult = [wm.changes()['moved'][0]['to'], wm.budget()['phase'], "
+                     "wm.report({'goal': 'x'}, wm.solve())]", r2.MOVE_RULES)
+            assert r[0] == [24, 8] and r[1] == "probe" and r[2]["notes"] == {"goal": "x"} and r[2]["wm"]["stage"] == "level1", r
+            # finish level 1 by direct play (the toy solution: push the box onto the target)
+            import copy
+            sim, path = copy.deepcopy(g), None
+            frontier, seen = [(sim, [])], {(sim.p, sim.box)}
+            while frontier and path is None:
+                nxt = []
+                for s, p in frontier:
+                    for a in ("UP", "DOWN", "LEFT", "RIGHT"):
+                        t = copy.deepcopy(s)
+                        if t.act({"action": a}):
+                            path = p + [a]
+                            break
+                        if (t.p, t.box) not in seen:
+                            seen.add((t.p, t.box))
+                            nxt.append((t, p + [a]))
+                    if path:
+                        break
+                frontier = nxt
+            r = call("action(%r)\nresult = current_frame.level" % path, r2.MOVE_RULES)
+            assert r == 2 and g.level == 2
+            # level 2: the same calls now plan and play
+            before = g.steps
+            r = call("out = wm.solve()\nresult = [out['stage'], out['execute'].get('level_completed'), wm.health()['verdict']]", r2.MOVE_RULES)
+            assert r[0] == "execute" and r[1] is True and g.level == 3 and g.steps > before, r
+    # refusals
+    import wm_ref
+    import wm_round3 as r3
+    base = wm_search.patch_wm_source(r3.patch_wm_source(r2.patch_wm_source(wm_ref.WM_SOURCE)))
+    for bad, msg in ((base, "wm_modes.py"), (wm_modes.patch_wm_source(base, "toolbox"), "toolbox mode")):
+        try:
+            patch_wm_source(bad)
+            raise AssertionError("accepted " + msg)
+        except SystemExit as e:
+            assert msg in str(e), str(e)
+    full = wm_modes.patch_wm_source(base, "full")
+    assert "_WM_MIN_LEVEL = 3" in patch_wm_source(full, 3) and patch_wm_source(patch_wm_source(full)) == patch_wm_source(full)
+    print("selftest ok (real sandbox subprocess, full wm stack + governor in both apply orders): on level 1 solve / "
+          "explore / search / check / plan / health return stage 'level1' and play nothing while changes / budget / "
+          "report work; after level 1 is finished by direct play the same wm.solve() plans and completes level 2; "
+          "prompt: %d words" % len(" ".join(prompt_lines(2)).split()))
 
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
         selftest()
     elif len(sys.argv) >= 2 and sys.argv[1] == "--print-prompt":
-        print("\n\n".join(PROMPT_LINES))
+        print("\n\n".join(prompt_lines(2)))
     else:
         ap = argparse.ArgumentParser()
         ap.add_argument("root")
         ap.add_argument("--dry-run", action="store_true")
+        ap.add_argument("--min-level", type=int, default=2)
         a = ap.parse_args()
-        print(apply(a.root, a.dry_run))
+        print(apply(a.root, a.dry_run, a.min_level))
