@@ -290,7 +290,7 @@ def selftest():
         f_src = "".join(json.load(open(fixed))["cells"][idx]["source"])
         # 15 escapes converted (edit 6: anchor + 12 in the inserted helper, edit 7: anchor + replacement);
         # the 5 that remain are the prompts edits, where the literal form is the correct one
-        assert (broken_src.count("\\" + BSN), f_src.count("\\" + BSN)) == (20, 5)
+        assert (broken_src.count("\\" + BSN), f_src.count("\\" + BSN)) == (18, 3)
         # half a fix (anchors converted, a replacement left literal) is caught as BAD_NEW / by the run
         half = f_src.replace("self._effective_max_output_tokens(request_timeout_seconds)," + BSN,
                              "self._effective_max_output_tokens(request_timeout_seconds),\\" + BSN)

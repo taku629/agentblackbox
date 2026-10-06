@@ -13,7 +13,7 @@ i.e. +3 tasks). AGI-3 best 3.98 hidden / notes arm 6.59-7.24 public-25 (run sigm
 
     O=/tmp/sat; mkdir -p $O
     kaggle kernels output takumuhata/arc-agi2-sft139-panel   -p $O/panel_base
-    kaggle kernels output takumuhata/arc-agi2-xcalibur-panel -p $O/panel_xcal
+    kaggle kernels output takumuhata/arc-agi2-NVARC-panel -p $O/panel_nvarc
     kaggle kernels output takumuhata/<union panel slug>      -p $O/union_panel
     kaggle kernels output takumuhata/arc-agi2-genboost       -p $O/genboost
     kaggle kernels output takumuhata/<wm arm slug>           -p $O/wm
@@ -32,11 +32,11 @@ i.e. +3 tasks). AGI-3 best 3.98 hidden / notes arm 6.59-7.24 public-25 (run sigm
 | gained 0, lost 0 (or 1 in total) | the pipeline repeats itself on 24 tasks | go on |
 | more than 1 input moved | run-to-run noise is as large as the effect we look for | treat every `promote` below as `inconclusive`; only a full 120 run or the LB decides |
 
-### 1.2 Model verdict (xcalibur vs sft139)
+### 1.2 Model verdict (NVARC vs sft139)
 
-    python3 arc-agi-2/dev/swap_eval.py compare $O/panel_base/inference_outputs $O/panel_xcal/inference_outputs \
-        --base-nll $O/panel_base --cand-nll $O/panel_xcal --name xcalibur | tee $O/v_model.txt
-    python3 arc-agi-2/dev/swap_eval.py union $O/panel_base/inference_outputs $O/panel_xcal/inference_outputs | tee $O/v_union.txt
+    python3 arc-agi-2/dev/swap_eval.py compare $O/panel_base/inference_outputs $O/panel_nvarc/inference_outputs \
+        --base-nll $O/panel_base --cand-nll $O/panel_nvarc --name NVARC | tee $O/v_model.txt
+    python3 arc-agi-2/dev/swap_eval.py union $O/panel_base/inference_outputs $O/panel_nvarc/inference_outputs | tee $O/v_union.txt
 
 Read the LAST line of each. `v_model` is one of `promote / inconclusive / reject`;
 `v_union` starts with `build the union kernel` / `swap, do not union` / `no union`.
@@ -61,8 +61,8 @@ score is >= 30.56, else `{}` (see 1.5).
 
 | v_union | v_model | pass-2 checks (1.3) | build | submit slug |
 |---|---|---|---|---|
-| build the union kernel | any | ok | `python3 arc-agi-2/dev/make_union_kernel.py --second pranshubahadur/xcalibur-aa2-sft-500/Transformers/bf16/1 --levers "$LEVERS"` | `takumuhata/arc-agi2-union` |
-| build the union kernel | promote | failed | `python3 arc-agi-2/dev/make_gen_kernel.py --levers "$LEVERS" --model-source pranshubahadur/xcalibur-aa2-sft-500/Transformers/bf16/1` | `takumuhata/arc-agi2-genboost` |
+| build the union kernel | any | ok | `python3 arc-agi-2/dev/make_union_kernel.py --second takumuhata/qwen-nvarc/Transformers/bf16/1 --levers "$LEVERS"` | `takumuhata/arc-agi2-union` |
+| build the union kernel | promote | failed | `python3 arc-agi-2/dev/make_gen_kernel.py --levers "$LEVERS" --model-source takumuhata/qwen-nvarc/Transformers/bf16/1` | `takumuhata/arc-agi2-genboost` |
 | swap, do not union | promote / inconclusive | - | same `make_gen_kernel.py ... --model-source` line | `takumuhata/arc-agi2-genboost` |
 | no union | promote | - | same `make_gen_kernel.py ... --model-source` line | `takumuhata/arc-agi2-genboost` |
 | no union | inconclusive / reject | - | keep sft139: `make_gen_kernel.py --levers "$LEVERS"` if LEVERS is not `{}`, else keep `takumuhata/arc-agi2-lb33-perfpatch` | genboost or perfpatch |
@@ -104,7 +104,7 @@ real config/tokenizer/safetensors headers; weights compared on 5 tensor slices):
 |---|---|---|---|---|---|
 | 1 | `iamPi/Qwen-NVARC` | Hugging Face only | DROP-IN OK, 1 WARN (tied embeddings) | 0.11-0.22 | the only different training run; no licence file; must be mirrored to a Kaggle Model |
 | 2 | `sorokin/qwen3_2b_grids15_sft141/Transformers/bfloat16/1` | Kaggle Models | DROP-IN OK, WARN (2B: 1.41 B params) | different size | ~0.39x time per task; Apache 2.0 |
-| 3 | `konstantinboyko/qwen3-4b-bfloat16-v02-01-01/Transformers/default/1` | Kaggle Models | DROP-IN OK | 0.0000-0.0006 | closer to sft139 than xcalibur (0.0002-0.0005): expect the xcalibur verdict or less |
+| 3 | `konstantinboyko/qwen3-4b-bfloat16-v02-01-01/Transformers/default/1` | Kaggle Models | DROP-IN OK | 0.0000-0.0006 | closer to sft139 than NVARC (0.0002-0.0005): expect the NVARC verdict or less |
 | - | `maximecarriere/qwen3-8b-arc-custom-merged` | Kaggle Models | NOT a drop-in | - | 8B, 16 ids but `<|im_start|>user` is ONE token (id 11) and id 14 is `<unk>`; 12.9 GiB fails the L4 TTT gate |
 
     # 1: mirror + gate (licence question to settle first, see the hand-over note)
