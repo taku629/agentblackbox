@@ -1329,3 +1329,28 @@ make_colab_sft_nb / wm_level2_only / wm_short_prompt selftests; the
 regenerated ipynb differs from the committed one only in the gzip
 header bytes of the embedded blobs (Python version); payload sha256s
 are identical, committed file kept).
+
+## 2026-10-07 — local WSL session (Claude): state check, read-only findings
+
+Standing (public LB CSV, 2026-10-07 21:00 UTC):
+- AGI-2: 30.56, rank 706/2552. Top 10% = 31.81, top 5% = 32.22, rank 40 = 33.06.
+- AGI-3: 3.98, rank 1102/3940. Top 10% = 28.85, top 5% = 30.51, rank 40 = 33.19.
+  The AGI-3 line moved because dfranzen/arc-agi-3-milestone-2-solution went
+  public on Oct 3 (27.6-31.5 run to run); shiiin9/affectify-arc-31-54-in-a-single-sub
+  is the same notebook with a D' slot priority (31.54, one sub) and a 5-minute
+  one-game save run. Both attach only public dfranzen datasets/models.
+  NOT forked from this session (auto-mode permission denied the push) — owner decision.
+- No AGI-3 submission since Oct 4 (2.54 / 2.73 / 3.33 / 3.32 before that).
+- AGI-2 daily perfpatch submission of Oct 7 (ref 56900394) ended in ERROR.
+
+Oct 5 kernel errors (both are input-mount failures, not code):
+- arc-agi2-genboost: FileNotFoundError /kaggle/input/competitions/arc-prize-2026-arc-agi-2/
+  arc-agi_evaluation_challenges.json (same metadata + image as evalscan, which ran on Oct 3).
+- arc3-duck-anim-v3-notes: bundle resolved to /kaggle/input/taaf-anim-notes-bundle, no src/.
+- CPU probe takumuhata/arc-mount-probe-cpu (Oct 7, default image): competitions at
+  /kaggle/input/competitions/<slug>, datasets at /kaggle/input/datasets/<owner>/<slug>,
+  models at /kaggle/input/models/<owner>/<slug>/...; the flat /kaggle/input/<slug> paths
+  do NOT exist. So the Oct 5 sessions saw the other layout; kernels should resolve both.
+
+Not done here: swap_eval.py panel on the evalscan output (permission denied). The
+evalscan kernel output holds 81 task ids / 1271 pickles and no timing.log.
