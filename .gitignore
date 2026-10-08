@@ -25,3 +25,4 @@ arc-agi-3/arc_agi_3_wheels/
 
 # migration staging (redundant with repo itself)
 migration/
+arc-agi-3/fork_state/
