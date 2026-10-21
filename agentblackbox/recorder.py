@@ -9,13 +9,13 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
 from .cost import calculate_cost
 from .models import ErrorRecord, LLMCall, Session, ToolCall
 from .privacy import redact
+from .replay import export_session_dict, render_replay
 from .storage import DEFAULT_DB_PATH, SQLiteStorage
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -264,40 +264,7 @@ class BlackBox:
             return
 
         events = store.get_events(sid)
-
-        start_dt = datetime.fromtimestamp(session.start_time / 1e9)
-        end_dt = datetime.fromtimestamp(session.end_time / 1e9) if session.end_time else None
-
-        print(f"\n{'='*70}")
-        print(f"  Session: {sid}")
-        print(f"  Agent:   {session.agent_name}")
-        print(f"  Status:  {session.status}")
-        print(f"  Start:   {start_dt.strftime('%Y-%m-%d %H:%M:%S.%f')}")
-        if end_dt:
-            elapsed_ms = (session.end_time - session.start_time) / 1e6  # type: ignore[operator]
-            print(f"  End:     {end_dt.strftime('%Y-%m-%d %H:%M:%S.%f')}  ({elapsed_ms:.1f}ms)")
-        print(f"  Cost:    ${session.total_cost_usd:.6f}")
-        print(f"{'='*70}")
-
-        for ts, kind, ev in events:
-            dt = datetime.fromtimestamp(ts / 1e9)
-            prefix = dt.strftime("%H:%M:%S.%f")[:-3]
-            if kind == "llm":
-                print(f"\n[{prefix}] LLM  model={ev.model}  tokens={ev.input_tokens}→{ev.output_tokens}  ${ev.cost_usd:.6f}  {ev.duration_ms:.1f}ms")
-                _print_truncated("  IN ", ev.input_text, 200)
-                _print_truncated("  OUT", ev.output_text, 200)
-            elif kind == "tool":
-                status_mark = "✗" if ev.error else "✓"
-                print(f"\n[{prefix}] TOOL [{status_mark}] {ev.tool_name}  {ev.duration_ms:.1f}ms")
-                _print_truncated("  ARGS  ", json.dumps(ev.arguments), 200)
-                if ev.error:
-                    _print_truncated("  ERROR ", ev.error, 200)
-                else:
-                    _print_truncated("  RESULT", str(ev.result), 200)
-            elif kind == "error":
-                print(f"\n[{prefix}] ERROR {ev.error_type}: {ev.message}")
-                print("  " + ev.traceback.replace("\n", "\n  ").rstrip())
-        print(f"\n{'='*70}\n")
+        print(render_replay(session, events), end="")
 
     @classmethod
     def export_json(cls, session_id: str, db_path: Optional[Path] = None) -> str:
@@ -307,53 +274,12 @@ class BlackBox:
         if session is None:
             raise ValueError(f"Session not found: {sid}")
 
-        data = {
-            "session": {
-                "session_id": session.session_id,
-                "agent_name": session.agent_name,
-                "start_time": session.start_time,
-                "end_time": session.end_time,
-                "status": session.status,
-                "total_cost_usd": session.total_cost_usd,
-                "metadata": session.metadata,
-            },
-            "llm_calls": [
-                {
-                    "id": c.id,
-                    "timestamp": c.timestamp,
-                    "model": c.model,
-                    "input_tokens": c.input_tokens,
-                    "output_tokens": c.output_tokens,
-                    "input_text": c.input_text,
-                    "output_text": c.output_text,
-                    "duration_ms": c.duration_ms,
-                    "cost_usd": c.cost_usd,
-                }
-                for c in store.get_llm_calls(sid)
-            ],
-            "tool_calls": [
-                {
-                    "id": c.id,
-                    "timestamp": c.timestamp,
-                    "tool_name": c.tool_name,
-                    "arguments": c.arguments,
-                    "result": c.result,
-                    "duration_ms": c.duration_ms,
-                    "error": c.error,
-                }
-                for c in store.get_tool_calls(sid)
-            ],
-            "errors": [
-                {
-                    "id": e.id,
-                    "timestamp": e.timestamp,
-                    "error_type": e.error_type,
-                    "message": e.message,
-                    "traceback": e.traceback,
-                }
-                for e in store.get_errors(sid)
-            ],
-        }
+        data = export_session_dict(
+            session,
+            store.get_llm_calls(sid),
+            store.get_tool_calls(sid),
+            store.get_errors(sid),
+        )
         return json.dumps(data, ensure_ascii=False, indent=2)
 
 
@@ -418,9 +344,3 @@ class MockBlackBox(BlackBox):
 
     def remaining_tool_results(self) -> int:
         return len(self._tool_queue) - self._tool_index
-
-
-def _print_truncated(label: str, text: str, max_len: int) -> None:
-    if len(text) > max_len:
-        text = text[:max_len] + f"... [{len(text) - max_len} more chars]"
-    print(f"  {label}: {text}")
