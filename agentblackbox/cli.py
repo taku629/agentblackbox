@@ -19,6 +19,9 @@ def main() -> None:
         _cmd_replay(args[1:])
     elif cmd == "export":
         _cmd_export(args[1:])
+    elif cmd == "runs":
+        from .runs_cli import handle_runs_command
+        handle_runs_command(args[1:])
     elif cmd in ("-h", "--help", "help"):
         _print_help()
     else:
@@ -31,6 +34,7 @@ def _print_help() -> None:
     print("""agentblackbox — AI agent black-box recorder
 
 Usage:
+  agentblackbox runs                Manage evaluation runs (list, show, compare, export)
   agentblackbox sessions            List recorded sessions
   agentblackbox replay <session_id> Replay a session in the console
   agentblackbox export <session_id> Export session as JSON
